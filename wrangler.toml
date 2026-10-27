@@ -1,0 +1,7 @@
+name = "selfie-oranim"
+pages_build_output_dir = "."
+compatibility_date = "2024-09-01"
+
+[[kv_namespaces]]
+binding = "PRIZMA_KV"
+id = "c4814924a0f04e4e8265a58bb135dc18"
