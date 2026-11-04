@@ -4,22 +4,33 @@
 
 window.SelfieApp = (function () {
   const STORAGE_KEY_COHORT = "selfie2_cohort_submissions_v1";
-  const STORAGE_KEY_CURRENT = "selfie2_current_draft_v1";
+  const STORAGE_KEY_CURRENT = "selfie2_current_draft_v3";
+
+  // צבעי רמזור (גווני אדום -> צהוב -> ירוק) לפי ציון 0-100
+  function getTrafficLightColor(score) {
+    const s = Number(score) || 0;
+    if (s < 20) return "#dc2626"; // אדום
+    if (s < 40) return "#ea580c"; // אדום-כתום
+    if (s < 55) return "#eab308"; // צהוב
+    if (s < 70) return "#84cc16"; // צהוב-ירקרק
+    if (s < 85) return "#22c55e"; // ירוק
+    return "#15803d";             // ירוק כהה
+  }
 
   let state = {
-    lang: "he", // "he" | "en"
-    activeTab: "assessment", // "assessment" | "report" | "ai_advisor" | "badge" | "dashboard" | "methodology"
+    lang: "he",
+    activeTab: "assessment",
     activeDomainIdx: 0,
     currentDraft: {
-      name: "ד״ר איל בלן",
-      email: "eyal.b@oranim.ac.il",
+      name: "",
+      email: "",
       role: "lecturer",
       department: "general",
-      courseName: "חדשנות פדגוגית ובינה מלאכותית בחינוך",
+      courseName: "",
       pulse: "pre_2026",
-      prePerception: "B2",
-      postPerception: "B2",
-      personalGoal: "הטמעת מודל הנתיב הכפול (מוגן + משלב AI) ומדידה מזווגת בקורסים",
+      prePerception: "",
+      postPerception: "",
+      personalGoal: "",
       artifactUrl: "",
       reflectionNotes: "",
       responses: {}
@@ -31,8 +42,8 @@ window.SelfieApp = (function () {
     },
     dashboardFilterDept: "all",
     dashboardFilterRole: "all",
-    dashboardCohortView: "paired", // "paired" | "attrition" | "late"
-    dashboardComparisonMode: "paired_valid", // "paired_valid" | "unmatched_flawed"
+    dashboardCohortView: "paired",
+    dashboardComparisonMode: "paired_valid",
     simAttritionPreN: 17,
     simAttritionPostN: 9,
     simDropoutBias: 18,
@@ -42,7 +53,6 @@ window.SelfieApp = (function () {
 
   function init() {
     loadStateFromStorage();
-    ensureDefaultResponses();
     renderAll();
     syncFromCloudIfNeeded();
   }
@@ -81,23 +91,10 @@ window.SelfieApp = (function () {
   }
 
   function ensureDefaultResponses() {
-    const res = state.currentDraft.responses || {};
-    const defaultProfile = {
-      "1.1": "B2", "1.2": "B2", "1.3": "C1",
-      "2.1": "B2", "2.2": "C1", "2.3": "B2",
-      "3.1": "B1", "3.2": "B1", "3.3": "B2",
-      "4.1": "B2", "4.2": "B1", "4.3": "B2",
-      "5.1": "C1", "5.2": "B2", "5.3": "C1",
-      "6.1": "B2", "6.2": "C1", "6.3": "C1"
-    };
-    window.SELFIE_CONFIG.domains.forEach((dom) => {
-      dom.items.forEach((it) => {
-        if (!res[it.id]) {
-          res[it.id] = defaultProfile[it.id] || "B1";
-        }
-      });
-    });
-    state.currentDraft.responses = res;
+    // משאירים ריק לסימון ראשוני של המשתמש
+    if (!state.currentDraft.responses) {
+      state.currentDraft.responses = {};
+    }
   }
 
   async function syncFromCloudIfNeeded() {
@@ -247,7 +244,7 @@ window.SelfieApp = (function () {
 
     saveStateToStorage();
     pushSubmissionToCloud(newRecord);
-    showToast("השאלון נשמר ושויך למזהה המזווג הקבוע שלך (" + pid + ")!");
+    showToast("השאלון נשמר בהצלחה!");
     setTab("report");
   }
 
@@ -274,12 +271,12 @@ window.SelfieApp = (function () {
     if (!navContainer) return;
 
     const tabs = [
-      { id: "assessment", icon: "📝", labelHe: "1. שאלון סלפי 2.0", labelEn: "1. SELFIE 2.0 Survey" },
-      { id: "report", icon: "📊", labelHe: "2. דוח אישי ושיבוץ למסלול", labelEn: "2. Personal Report & Track" },
-      { id: "ai_advisor", icon: "🤖", labelHe: "3. יועץ AI לסילבוס", labelEn: "3. AI Syllabus Advisor" },
-      { id: "badge", icon: "🏅", labelHe: "4. תעודה ותג דיגיטלי", labelEn: "4. Certificate & Badge" },
-      { id: "dashboard", icon: "👑", labelHe: "5. דשבורד מחקרי מזווג (Pre-Post)", labelEn: "5. Paired Research Dashboard" },
-      { id: "methodology", icon: "🔬", labelHe: "6. מעבדת הכשלים (ישן מול חדש)", labelEn: "6. Methodology Audit Lab" }
+      { id: "assessment", icon: "📝", labelHe: "1. שאלון סלפי" },
+      { id: "report", icon: "📊", labelHe: "2. דוח אישי ופירוט ציונים" },
+      { id: "ai_advisor", icon: "🤖", labelHe: "3. יועץ לקורס ולסילבוס" },
+      { id: "badge", icon: "🏅", labelHe: "4. תעודה ותג דיגיטלי" },
+      { id: "dashboard", icon: "👑", labelHe: "5. דשבורד מחקרי" },
+      { id: "methodology", icon: "🔬", labelHe: "6. מעבדת הכשלים" }
     ];
 
     navContainer.innerHTML = tabs
@@ -292,58 +289,15 @@ window.SelfieApp = (function () {
               : "bg-white/80 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200/80"
           }">
           <span>${t.icon}</span>
-          <span>${state.lang === "he" ? t.labelHe : t.labelEn}</span>
+          <span>${t.labelHe}</span>
         </button>`;
       })
       .join("");
-
-    const langBtn = document.getElementById("lang-toggle-btn");
-    if (langBtn) {
-      langBtn.innerHTML =
-        state.lang === "he"
-          ? `<span>🌐</span> <span>English (EFL)</span>`
-          : `<span>🌐</span> <span>עברית (RTL)</span>`;
-    }
   }
 
   function renderTopQuickStats() {
     const bar = document.getElementById("top-live-summary");
-    if (!bar) return;
-
-    const calc = window.SelfieScoringEngine.calculateSubmissionScores(state.currentDraft);
-    const pid = window.SelfieScoringEngine.hashParticipantId(
-      state.currentDraft.email || state.currentDraft.name
-    );
-    const profileObj = window.SELFIE_CONFIG.profiles[state.currentDraft.role];
-
-    bar.innerHTML = `
-      <div class="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl px-4 py-3 shadow-sm">
-        <div class="flex flex-wrap items-center gap-3">
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
-            ${profileObj.icon} ${state.lang === "he" ? profileObj.labelHe : profileObj.labelEn}
-          </span>
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200" title="מזהה קבוע להשוואה מזווגת בין פעימה א׳ לפעימה ב׳">
-            🔗 Paired ID: <span id="live-pid-badge">${pid}</span>
-          </span>
-          <span class="text-xs text-slate-500 hidden md:inline">
-            6 תחומים מאוזנים (16.67% לכל תחום) • מותאם ל-10 דקות מילוי
-          </span>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
-            <span class="text-xs text-slate-500">ציון סלפי 2.0 מתוקן:</span>
-            <span class="text-sm font-black px-2 py-0.5 rounded-lg text-white" style="background:${calc.overallLevel.color}">
-              ${calc.overallLevel.code} (${calc.overallScore}%)
-            </span>
-          </div>
-          <div class="hidden sm:flex items-center gap-1.5 bg-amber-50/90 border border-amber-200 px-3 py-1.5 rounded-xl text-xs text-amber-900" title="מה שהיית מקבל בנוסחה המעוותת של ה-SELFIE האירופי הישן">
-            <span>בסלפי הישן:</span>
-            <span class="font-bold line-through decoration-rose-500">${calc.oldEuOverallLevel.code} (${calc.oldEuOverallScore}%)</span>
-          </div>
-        </div>
-      </div>
-    `;
+    if (bar) bar.innerHTML = "";
   }
 
   function renderActiveTab() {
@@ -365,27 +319,18 @@ window.SelfieApp = (function () {
     const main = document.getElementById("main-view-container");
     const config = window.SELFIE_CONFIG;
     const draft = state.currentDraft;
-    const isHe = state.lang === "he";
-    const pid = window.SelfieScoringEngine.hashParticipantId(draft.email || draft.name);
 
     const activeDom = config.domains[state.activeDomainIdx] || config.domains[0];
 
     main.innerHTML = `
       <div class="space-y-6">
-        <!-- Role, Paired Identity & Demo Presets Card -->
+        <!-- Profile & Question 1 Card -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-            <div>
-              <h2 class="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
-                <span>🎯</span>
-                <span>${isHe ? "הגדרת פרופיל וזיהוי מזווג רב-פעימתי (Longitudinal Paired ID)" : "Profile & Longitudinal Paired Identification"}</span>
-              </h2>
-              <p class="text-xs sm:text-sm text-slate-600 mt-1">
-                ${isHe
-                  ? "המערכת מתאימה את ניסוח השאלות לתפקידך ומייצרת מזהה מזווג קבוע כדי להבטיח שפעימה א׳ תושווה אך ורק לפעימה ב׳ של אותו אדם."
-                  : "Questions adapt to your role and generate a persistent Paired ID so Pulse 1 is strictly compared with Pulse 2 of the same individual."}
-              </p>
-            </div>
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <h2 class="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+              <span>🎯</span>
+              <span>פרטי משיב/ה</span>
+            </h2>
 
             <!-- Role Switcher Pills -->
             <div class="flex flex-wrap gap-2">
@@ -399,99 +344,92 @@ window.SelfieApp = (function () {
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }">
                     <span>${prof.icon}</span>
-                    <span>${isHe ? prof.labelHe : prof.labelEn}</span>
+                    <span>${prof.labelHe}</span>
                   </button>`;
                 })
                 .join("")}
             </div>
           </div>
 
-          <!-- Form Fields for Paired Identification -->
+          <!-- Form Fields -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 pt-4">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">${isHe ? "שם מלא (או כינוי קבוע)" : "Full Name / Alias"}</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">שם מלא</label>
               <input type="text" value="${draft.name}" oninput="SelfieApp.updateDraftField('name', this.value)"
                 class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
-                placeholder="${isHe ? "למשל: ד״ר אושרי זיגלבוים" : "e.g., Dr. Sarah Levine"}" />
+                placeholder="הזן/י שם מלא" />
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">${isHe ? "אימייל מוסדי (לזיווג Pre-Post)" : "Institutional Email (Paired Key)"}</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">אימייל מוסדי</label>
               <input type="email" value="${draft.email}" oninput="SelfieApp.updateDraftField('email', this.value)"
-                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none font-mono"
-                placeholder="name@oranim.ac.il" />
+                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
+                placeholder="אימייל מוסדי" />
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">${isHe ? "חוג / יחידה אקדמית" : "Department / Unit"}</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">חוג / יחידה אקדמית</label>
               <select onchange="SelfieApp.updateDraftField('department', this.value)"
                 class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none bg-white">
                 ${config.departments
                   .map(
                     (d) =>
-                      `<option value="${d.id}" ${draft.department === d.id ? "selected" : ""}>${
-                        isHe ? d.nameHe : d.nameEn
-                      }</option>`
+                      `<option value="${d.id}" ${draft.department === d.id ? "selected" : ""}>${d.nameHe}</option>`
                   )
                   .join("")}
               </select>
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">${isHe ? "פעימת מדידה" : "Assessment Pulse"}</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">פעימת מדידה</label>
               <select onchange="SelfieApp.updateDraftField('pulse', this.value)"
                 class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-indigo-300 bg-indigo-50/50 font-bold text-indigo-950 focus:outline-none">
                 ${config.pulses
                   .map(
                     (p) =>
-                      `<option value="${p.id}" ${draft.pulse === p.id ? "selected" : ""}>${
-                        isHe ? p.nameHe : p.nameEn
-                      }</option>`
+                      `<option value="${p.id}" ${draft.pulse === p.id ? "selected" : ""}>${p.nameHe}</option>`
                   )
                   .join("")}
               </select>
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">${isHe ? "קורס / מקצוע מרכזי" : "Primary Course / Subject"}</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">קורס / מקצוע מרכזי</label>
               <input type="text" value="${draft.courseName}" oninput="SelfieApp.updateDraftField('courseName', this.value)"
                 class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
-                placeholder="${isHe ? "שם הקורס לשדרוג הסילבוס" : "Course name"}" />
+                placeholder="שם הקורס" />
             </div>
           </div>
 
-          <!-- Pre-perception & Quick Demo Fill Bar -->
-          <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs font-bold text-slate-700">💭 ${isHe ? "איך את/ה מעריך/ה את רמתך לפני מילוי השאלון?" : "Self-perceived level BEFORE taking the survey:"}</span>
-              <div class="flex gap-1">
-                ${config.levels
-                  .map((lv) => {
-                    const active = draft.prePerception === lv.code;
-                    return `<button onclick="SelfieApp.updateDraftField('prePerception', '${lv.code}'); SelfieApp.renderAssessmentView();"
-                      class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                        active
-                          ? "text-white shadow-sm"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }" style="${active ? "background:" + lv.color : ""}">
-                      ${lv.code}
-                    </button>`;
-                  })
-                  .join("")}
-              </div>
+          <!-- Question 1: Self-Definition -->
+          <div class="mt-5 pt-5 border-t border-slate-200">
+            <div class="mb-3">
+              <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black bg-indigo-600 text-white ml-1.5">
+                שאלה 1
+              </span>
+              <h3 class="inline text-base sm:text-lg font-extrabold text-slate-900">
+                איך את/ה מגדיר/ה את עצמך בשילוב טכנולוגיה ובינה מלאכותית בהוראה?
+              </h3>
             </div>
-
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[11px] font-bold text-slate-500 ml-1">⚡ ${isHe ? "מילוי הדגמה מהיר:" : "Quick Demo Presets:"}</span>
-              <button onclick="SelfieApp.applyQuickPreset('newcomer')" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700">🌱 ${isHe ? "מתחיל (A1-A2)" : "Newcomer"}</button>
-              <button onclick="SelfieApp.applyQuickPreset('integrator')" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200">🚀 ${isHe ? "משלב (B1-B2)" : "Integrator"}</button>
-              <button onclick="SelfieApp.applyQuickPreset('pioneer')" class="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200">👑 ${isHe ? "חלוץ (C1-C2)" : "Pioneer"}</button>
-              <button onclick="SelfieApp.applyQuickPreset('distortion_demo')" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200">⚠️ ${isHe ? "הדגמת עיוות הסלפי הישן" : "Old SELFIE Flaw Demo"}</button>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              ${config.levels
+                .map((lv) => {
+                  const active = draft.prePerception === lv.code;
+                  return `<button onclick="SelfieApp.updateDraftField('prePerception', '${lv.code}'); SelfieApp.renderAssessmentView();"
+                    class="p-3 rounded-xl text-xs sm:text-sm font-bold border-2 transition-all text-center ${
+                      active
+                        ? "text-white shadow-md scale-[1.02]"
+                        : "bg-slate-50 text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-white"
+                    }" style="${active ? "background:" + lv.color + "; border-color:" + lv.color : ""}">
+                    ${lv.titleHe}
+                  </button>`;
+                })
+                .join("")}
             </div>
           </div>
         </div>
 
-        <!-- 6 Balanced Domains Stepper -->
+        <!-- 6 Domains Stepper -->
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           ${config.domains
             .map((dom, idx) => {
@@ -505,40 +443,35 @@ window.SelfieApp = (function () {
                 }" style="${isSelected ? "border-color:" + dom.color : ""}">
                 <div class="flex items-center justify-between w-full mb-1">
                   <span class="text-lg">${dom.icon}</span>
-                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">${answeredCount}/3 • 16.7%</span>
+                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">${answeredCount}/3</span>
                 </div>
-                <div class="text-xs font-extrabold text-slate-900 line-clamp-1">${dom.num}. ${
-                isHe ? dom.shortHe : dom.shortEn
-              }</div>
+                <div class="text-xs font-extrabold text-slate-900 line-clamp-1">${dom.num}. ${dom.shortHe}</div>
               </button>`;
             })
             .join("")}
         </div>
 
-        <!-- Active Domain Header & 3 Items -->
+        <!-- Active Domain Header & 3 Questions -->
         <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
           <div class="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="background: linear-gradient(135deg, ${activeDom.color}, #1e1b4b)">
             <div>
-              <div class="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90">
-                <span>${isHe ? `תחום ${activeDom.num} מתוך 6 (משקל קבוע ומאוזן: 16.67%)` : `Domain ${activeDom.num} of 6 (Balanced Weight: 16.67%)`}</span>
-                <span>•</span>
-                <span>${activeDom.sourceRef}</span>
+              <div class="text-xs font-bold opacity-90">
+                תחום ${activeDom.num} מתוך 6
               </div>
-              <h3 class="text-xl font-black mt-1 flex items-center gap-2">
+              <h3 class="text-xl font-black mt-0.5 flex items-center gap-2">
                 <span>${activeDom.icon}</span>
-                <span>${isHe ? activeDom.titleHe : activeDom.titleEn}</span>
+                <span>${activeDom.titleHe}</span>
               </h3>
-              <p class="text-xs sm:text-sm opacity-90 mt-1">${activeDom.descHe}</p>
             </div>
             <div class="flex items-center gap-2 self-end sm:self-center">
               ${
                 state.activeDomainIdx > 0
-                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx - 1})" class="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold">→ ${isHe ? "תחום קודם" : "Prev"}</button>`
+                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx - 1})" class="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold">→ תחום קודם</button>`
                   : ""
               }
               ${
                 state.activeDomainIdx < config.domains.length - 1
-                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})" class="px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold">${isHe ? "התחום הבא" : "Next"} ←</button>`
+                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})" class="px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold">התחום הבא ←</button>`
                   : ""
               }
             </div>
@@ -546,33 +479,22 @@ window.SelfieApp = (function () {
 
           <div class="divide-y divide-slate-200">
             ${activeDom.items
-              .map((item) => {
-                const selectedCode = draft.responses[item.id] || "B1";
-                const introText = isHe
-                  ? item.introHe[draft.role] || item.introHe.lecturer
-                  : item.introEn;
-                const statements = isHe ? item.statementsHe : item.statementsEn;
+              .map((item, itemIdx) => {
+                const questionNum = 2 + state.activeDomainIdx * 3 + itemIdx;
+                const selectedCode = draft.responses[item.id] || "";
+                const introText = item.introHe[draft.role] || item.introHe.lecturer;
+                const statements = item.statementsHe;
 
                 return `
                   <div class="p-5 sm:p-6 hover:bg-slate-50/50 transition-colors">
-                    <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
-                      <div>
-                        <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white mr-1" style="background:${activeDom.color}">
-                          ${item.id}
-                        </span>
-                        <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
-                          ${isHe ? item.titleHe : item.titleEn}
-                        </h4>
-                        <p class="text-xs sm:text-sm text-slate-600 mt-1">${introText}</p>
-                      </div>
-                      <button onclick="SelfieApp.selectItemResponse('${item.id}', 'NA')"
-                        class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                          selectedCode === "NA"
-                            ? "bg-slate-800 text-white border-slate-800 shadow-sm"
-                            : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
-                        }" title="מוחרג מהמכנה ואינו מוריד את ממוצע התחום (תיקון כשל האופציה השביעית בסלפי הישן)">
-                        🚫 ${isHe ? "לא רלוונטי לתפקידי/לקורס (מוחרג מהמכנה)" : "Not Applicable (Excluded from denominator)"}
-                      </button>
+                    <div class="mb-3">
+                      <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white ml-1.5" style="background:${activeDom.color}">
+                        שאלה ${questionNum}
+                      </span>
+                      <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
+                        ${item.titleHe}
+                      </h4>
+                      <p class="text-xs sm:text-sm text-slate-600 mt-1">${introText}</p>
                     </div>
 
                     <!-- 6 Progression Statements Grid -->
@@ -591,17 +513,13 @@ window.SelfieApp = (function () {
                               <div>
                                 <div class="flex items-center justify-between gap-2 mb-2">
                                   <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
-                                    ${lv.code} • ${lv.normalizedScore}%
+                                    ${lv.titleHe}
                                   </span>
-                                  <span class="text-[11px] font-bold text-slate-500">${isHe ? lv.titleHe : lv.titleEn}</span>
+                                  ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✔ נבחר</span>` : ""}
                                 </div>
                                 <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
                                   ${formatBold(stText)}
                                 </p>
-                              </div>
-                              <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                <span>${lv.taxonomyStageHe}</span>
-                                ${isChosen ? `<span class="font-bold text-indigo-700">✔ נבחר</span>` : `<span>בחר/י</span>`}
                               </div>
                             </div>
                           `;
@@ -614,37 +532,32 @@ window.SelfieApp = (function () {
               .join("")}
           </div>
 
-          <!-- Footer Navigation & Submit -->
-          <div class="bg-slate-50 p-5 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs font-bold text-slate-700">🎯 ${isHe ? "תפיסת מסוגלות לאחר הרפלקציה:" : "Self-perceived level AFTER reflection:"}</span>
-              ${config.levels
-                .map((lv) => {
-                  const active = draft.postPerception === lv.code;
-                  return `<button onclick="SelfieApp.updateDraftField('postPerception', '${lv.code}'); SelfieApp.renderAssessmentView();"
-                    class="px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                      active ? "text-white shadow-sm" : "bg-white text-slate-600 border border-slate-200"
-                    }" style="${active ? "background:" + lv.color : ""}">
-                    ${lv.code}
-                  </button>`;
-                })
-                .join("")}
+          <!-- Footer Navigation & Submit (Save ONLY on Last Page) -->
+          <div class="bg-slate-50 p-5 border-t border-slate-200 flex items-center justify-between gap-4">
+            <div>
+              ${
+                state.activeDomainIdx > 0
+                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx - 1})"
+                      class="px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs sm:text-sm font-bold">
+                      → לתחום הקודם
+                    </button>`
+                  : ""
+              }
             </div>
 
             <div class="flex items-center gap-3">
               ${
                 state.activeDomainIdx < config.domains.length - 1
                   ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})"
-                      class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-bold shadow">
+                      class="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-bold shadow">
                       המשך לתחום ${state.activeDomainIdx + 2} מתוך 6 ←
                     </button>`
-                  : ""
+                  : `<button onclick="SelfieApp.submitCurrentReflection()"
+                      class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 flex items-center gap-2">
+                      <span>📊</span>
+                      <span>שמור שאלון והפק דוח אישי</span>
+                    </button>`
               }
-              <button onclick="SelfieApp.submitCurrentReflection()"
-                class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 flex items-center gap-2">
-                <span>📊</span>
-                <span>${isHe ? "שמור שאלון והפק דוח אישי + שיבוץ למסלול" : "Save & Generate Personal Report"}</span>
-              </button>
             </div>
           </div>
         </div>
@@ -655,261 +568,107 @@ window.SelfieApp = (function () {
   function setDomainIdx(idx) {
     state.activeDomainIdx = idx;
     renderAssessmentView();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   // ===========================================================================
-  // TAB 2: PERSONAL REPORT & DIFFERENTIAL TRACK ASSIGNMENT
+  // TAB 2: PERSONAL REPORT (SCORE BREAKDOWN IN RED-YELLOW-GREEN + 3 TIPS)
   // ===========================================================================
   function renderReportView() {
     const main = document.getElementById("main-view-container");
     const calc = window.SelfieScoringEngine.calculateSubmissionScores(state.currentDraft);
-    const pid = window.SelfieScoringEngine.hashParticipantId(
-      state.currentDraft.email || state.currentDraft.name
-    );
-
-    // Check if this participant has both Pre & Post in cohortSubmissions for Personal Paired Delta!
-    const myPre = state.cohortSubmissions.find(
-      (s) => s.participantHash === pid && s.pulse === "pre_2026"
-    );
-    const myPost = state.cohortSubmissions.find(
-      (s) => s.participantHash === pid && s.pulse === "post_2027"
-    );
-    let personalPairedHtml = "";
-    if (myPre && myPost) {
-      const preCalc = window.SelfieScoringEngine.calculateSubmissionScores(myPre);
-      const postCalc = window.SelfieScoringEngine.calculateSubmissionScores(myPost);
-      const myDelta = Math.round((postCalc.overallScore - preCalc.overallScore) * 10) / 10;
-      personalPairedHtml = `
-        <div class="bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border-2 border-emerald-300 rounded-2xl p-5 shadow-sm">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white mb-1">
-                ✔ זיהוי מזווג אישי נמצא במערכת (${pid})
-              </span>
-              <h3 class="text-base sm:text-lg font-black text-emerald-950">
-                ההתקדמות האישית המזווגת שלך: מפעימה א׳ (פתיחת שנה) לפעימה ב׳ (סיום שנה)
-              </h3>
-              <p class="text-xs text-emerald-800">
-                השוואה מדויקת של התשובות שלך עצמך בין שתי הפעימות (ללא ערבוב עם משיבים אחרים).
-              </p>
-            </div>
-            <div class="flex items-center gap-3 bg-white px-4 py-3 rounded-xl border border-emerald-200 shadow-sm">
-              <div class="text-center">
-                <div class="text-[11px] text-slate-500">פעימה א׳ (Pre)</div>
-                <div class="text-base font-black text-slate-800">${preCalc.overallLevel.code} (${preCalc.overallScore}%)</div>
-              </div>
-              <div class="text-lg font-black text-emerald-600">←</div>
-              <div class="text-center">
-                <div class="text-[11px] text-slate-500">פעימה ב׳ (Post)</div>
-                <div class="text-base font-black text-emerald-700">${postCalc.overallLevel.code} (${postCalc.overallScore}%)</div>
-              </div>
-              <div class="px-3 py-1 rounded-lg bg-emerald-600 text-white font-black text-sm">
-                ${myDelta >= 0 ? "+" + myDelta : myDelta}% Δ
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }
+    const overallColor = getTrafficLightColor(calc.overallScore);
 
     main.innerHTML = `
       <div class="space-y-6">
-        ${personalPairedHtml}
-
-        <!-- Top 3 Summary Cards: Gauge, Dual-Axis & Model Comparison, Differential Track -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <!-- Card 1: Symmetric Normalized Speedometer Gauge -->
-          <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col items-center justify-between text-center">
-            <div class="w-full flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-500">רמת כשירות כוללת (מאוזנת 0–100%)</span>
-              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700">6 צירים שווי-משקל</span>
-            </div>
-
-            <div class="my-2">
-              ${buildGaugeSvg(calc.overallScore, calc.overallLevel)}
-            </div>
-
-            <div class="w-full bg-slate-50 rounded-xl p-3 border border-slate-200/80 text-right">
-              <div class="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
-                <span>${calc.overallLevel.titleHe}</span>
-                <span style="color:${calc.overallLevel.color}">${calc.overallLevel.taxonomyStageHe}</span>
-              </div>
-              <p class="text-xs text-slate-600 leading-relaxed">${calc.overallLevel.descHe}</p>
-            </div>
-          </div>
-
-          <!-- Card 2: Dual Axis (Pedagogy vs Leadership) + Old vs New SELFIE Comparison -->
-          <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col justify-between space-y-4">
+        <!-- Overall Score + 6-Domain Score Breakdown (Red-Yellow-Green) -->
+        <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-200">
             <div>
-              <h3 class="text-sm font-black text-slate-900 mb-1">🔀 הפרדת צירים: עומק פדגוגי מול הובלת עמיתים</h3>
-              <p class="text-xs text-slate-500 mb-3">
-                בניגוד ל-SELFIE הישן שבו מרצה ללא תפקיד הדרכתי נחסם מרמות C1–C2, כאן שני הצירים נמדדים בנפרד:
-              </p>
-
-              <div class="space-y-3">
-                <div class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200">
-                  <div class="flex items-center justify-between text-xs font-bold text-indigo-950 mb-1">
-                    <span>🎓 מדד עומק פדגוגי ו-AI בהוראה</span>
-                    <span class="px-2 py-0.5 rounded bg-indigo-600 text-white">${calc.pedagogicalLevel.code} • ${calc.pedagogicalIndex}%</span>
-                  </div>
-                  <div class="w-full h-2.5 bg-indigo-100 rounded-full overflow-hidden">
-                    <div class="h-full bg-indigo-600 rounded-full" style="width:${calc.pedagogicalIndex}%"></div>
-                  </div>
-                </div>
-
-                <div class="p-3 rounded-xl bg-sky-50/60 border border-sky-200">
-                  <div class="flex items-center justify-between text-xs font-bold text-sky-950 mb-1">
-                    <span>🤝 מדד הובלת עמיתים ומערכתיות בחוג</span>
-                    <span class="px-2 py-0.5 rounded bg-sky-600 text-white">${calc.leadershipLevel.code} • ${calc.leadershipIndex}%</span>
-                  </div>
-                  <div class="w-full h-2.5 bg-sky-100 rounded-full overflow-hidden">
-                    <div class="h-full bg-sky-600 rounded-full" style="width:${calc.leadershipIndex}%"></div>
-                  </div>
-                </div>
+              <h2 class="text-lg sm:text-xl font-black text-slate-900">📊 פירוט הציונים לפי תחומים</h2>
+              <div class="flex flex-wrap items-center gap-3 mt-2 text-xs font-bold text-slate-600">
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-3 h-3 rounded-full inline-block" style="background:#dc2626"></span>
+                  <span>אדום: רמה התחלתית (0%–39%)</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-3 h-3 rounded-full inline-block" style="background:#eab308"></span>
+                  <span>צהוב: רמת ביניים (40%–69%)</span>
+                </span>
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-3 h-3 rounded-full inline-block" style="background:#16a34a"></span>
+                  <span>ירוק: רמה מתקדמת (70%–100%)</span>
+                </span>
               </div>
             </div>
 
-            <!-- Live Audit Box: What Old EU SELFIE Would Have Calculated -->
-            <div class="p-3.5 rounded-xl bg-amber-50/90 border border-amber-300">
-              <div class="flex items-center justify-between text-xs font-black text-amber-950 mb-1">
-                <span>⚖️ השוואה חיה מול נוסחת ה-SELFIE הישן:</span>
-                <span class="px-2 py-0.5 rounded bg-amber-200 text-amber-950">פער: ${calc.scoreDistortionGap > 0 ? "+" : ""}${calc.scoreDistortionGap}%</span>
+            <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 px-4 py-3 rounded-2xl">
+              <div class="text-right">
+                <div class="text-xs font-bold text-slate-500">ציון כולל</div>
+                <div class="text-sm font-black text-slate-900">${calc.overallLevel.titleHe}</div>
               </div>
-              <p class="text-[11px] text-amber-900 leading-relaxed">
-                על אותן תשובות בדיוק, הכלי האירופי הישן היה מחשב לך <strong>${calc.oldEuOverallScore}% (${calc.oldEuOverallLevel.code})</strong> במקום <strong>${calc.overallScore}% (${calc.overallLevel.code})</strong> בגלל רצפת ה-16.7%, משקל היתר של 9 שאלות מנהלה, והספים הלא-סימטריים.
-              </p>
-              ${
-                calc.hasCompensationWarning
-                  ? `<div class="mt-2 pt-2 border-t border-amber-300 text-[11px] font-bold text-rose-800">
-                      ⚠️ זוהתה 'הטיית פיצוי': ציון ארגוני גבוה ממסך פער בציר "${calc.minCoreDomain.shortHe}" (${calc.minCoreDomain.score}%). השיבוץ למסלול תוקן בהתאם!
-                    </div>`
-                  : ""
-              }
-            </div>
-          </div>
-
-          <!-- Card 3: Automatic Differential Training Track Assignment & Metacognitive Calibration -->
-          <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col justify-between space-y-4">
-            <div class="p-4 rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 text-white">
-              <div class="text-[11px] font-bold uppercase tracking-wider text-indigo-300 mb-1">
-                🎯 שיבוץ אוטומטי למסלול הדרכה דיפרנציאלי (פריזמה אורנים)
-              </div>
-              <h3 class="text-base sm:text-lg font-black text-white">
-                ${calc.assignedTrack.nameHe}
-              </h3>
-              <p class="text-xs text-slate-200 mt-1.5 leading-relaxed">
-                ${calc.assignedTrack.descHe}
-              </p>
-              <div class="mt-3 pt-2.5 border-t border-white/15 text-xs text-indigo-200">
-                <strong>תוצר יישומי במסלול:</strong> ${calc.assignedTrack.deliverableHe}
-              </div>
-            </div>
-
-            <!-- Metacognitive Calibration Pre vs Actual vs Post -->
-            <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div class="text-xs font-black text-slate-800 mb-2">🪞 כיול מטה-קוגניטיבי (תפיסה עצמית מול ביצוע בפועל)</div>
-              <div class="grid grid-cols-3 gap-2 text-center">
-                <div class="bg-white p-2 rounded-lg border border-slate-200">
-                  <div class="text-[10px] text-slate-500">לפני השאלון</div>
-                  <div class="text-sm font-black text-slate-800">${calc.metacognitive.preCode}</div>
-                </div>
-                <div class="bg-indigo-50 p-2 rounded-lg border border-indigo-200">
-                  <div class="text-[10px] text-indigo-700 font-bold">בפועל (מדוד)</div>
-                  <div class="text-sm font-black text-indigo-900">${calc.metacognitive.actualCode} (${calc.overallScore}%)</div>
-                </div>
-                <div class="bg-white p-2 rounded-lg border border-slate-200">
-                  <div class="text-[10px] text-slate-500">אחרי הרפלקציה</div>
-                  <div class="text-sm font-black text-slate-800">${calc.metacognitive.postCode}</div>
-                </div>
+              <div class="px-3.5 py-1.5 rounded-xl text-white text-lg font-black shadow-sm" style="background:${overallColor}">
+                ${calc.overallScore}%
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Radar Chart & Domain Bars Row -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <!-- 6-Domain Radar Chart -->
-          <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col items-center">
-            <div class="w-full flex items-center justify-between mb-2">
-              <h3 class="text-base font-black text-slate-900">🕸️ מפת רדאר טכנו-פדגוגית ו-AI לפי 6 התחומים</h3>
-              <span class="text-xs text-slate-500">משקל שווה: 16.67% לכל ציר</span>
-            </div>
-            <div class="w-full flex justify-center">
-              ${buildRadarSvg(calc.domainResults)}
-            </div>
-          </div>
-
-          <!-- 6-Domain Horizontal Breakdown & Old vs New per Domain -->
-          <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col justify-between">
-            <div>
-              <h3 class="text-base font-black text-slate-900 mb-1">📊 פירוט ציונים לפי תחומים (0–100% מנורמל)</h3>
-              <p class="text-xs text-slate-500 mb-4">כל תחום מורכב מ-3 היגדי ליבה מאוזנים. פריטים שסומנו "לא רלוונטי" הוחרגו מהמכנה.</p>
-
-              <div class="space-y-3.5">
-                ${calc.domainResults
-                  .map(
-                    (d) => `
-                  <div>
-                    <div class="flex items-center justify-between text-xs font-bold mb-1">
-                      <span class="flex items-center gap-1.5 text-slate-800">
+          <div class="space-y-4 pt-5">
+            ${calc.domainResults
+              .map((d) => {
+                const barColor = getTrafficLightColor(d.score);
+                return `
+                  <div class="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80">
+                    <div class="flex items-center justify-between text-xs sm:text-sm font-bold mb-2">
+                      <span class="flex items-center gap-2 text-slate-900">
                         <span>${d.icon}</span>
                         <span>${d.num}. ${d.titleHe}</span>
-                        ${d.naItems > 0 ? `<span class="text-[10px] px-1.5 py-0.2 bg-slate-200 rounded">(${d.naItems} הוחרגו)</span>` : ""}
                       </span>
                       <span class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded text-white font-black" style="background:${d.level.color}">${d.level.code}</span>
-                        <span class="font-black text-slate-900">${d.score}%</span>
+                        <span class="px-2.5 py-0.5 rounded-lg text-white text-xs font-black" style="background:${barColor}">
+                          ${d.level.titleHe}
+                        </span>
+                        <span class="font-black text-slate-900 w-12 text-left">${d.score}%</span>
                       </span>
                     </div>
-                    <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                      <div class="h-full rounded-full transition-all duration-500" style="width:${Math.max(4, d.score)}%; background:${d.color}"></div>
+                    <div class="w-full h-3.5 bg-slate-200/80 rounded-full overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-500" style="width:${Math.max(4, d.score)}%; background:${barColor}"></div>
                     </div>
                   </div>
-                `
-                  )
-                  .join("")}
-              </div>
-            </div>
-
-            <div class="mt-5 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-              <button onclick="SelfieApp.setTab('ai_advisor')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm">
-                🤖 גזור תוכנית עבודה וכרטיס AI לסילבוס ←
-              </button>
-              <button onclick="SelfieApp.setTab('badge')" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold">
-                🏅 לתעודה ולתג הדיגיטלי
-              </button>
-            </div>
+                `;
+              })
+              .join("")}
           </div>
         </div>
 
         <!-- Top 3 Priority Growth Recommendations -->
-        <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-1">🚀 3 צעדים ממוקדים לקפיצת מדרגה ("Level Up" אישי)</h3>
-          <p class="text-xs text-slate-500 mb-4">המלצות יישומיות מיידיות שנגזרו מתוך 3 ההיגדים שבהם יש לך את פוטנציאל הצמיחה הגבוה ביותר:</p>
+        <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
+          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-4">🚀 3 הצעות ממוקדות לשיפור</h3>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${calc.priorityGrowthItems
-              .map(
-                (it, idx) => `
-              <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between">
-                <div>
-                  <div class="flex items-center justify-between gap-2 mb-2">
-                    <span class="px-2 py-0.5 rounded text-[11px] font-black text-white" style="background:${it.domainColor}">
-                      יעד ${idx + 1} • סעיף ${it.itemId}
-                    </span>
-                    <span class="text-xs font-bold text-slate-700">
-                      מ-${it.code} ← ל-${it.nextLevelCode}
-                    </span>
+              .map((it, idx) => {
+                const itemColor = getTrafficLightColor(it.normalized ?? 0);
+                return `
+                  <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col justify-between">
+                    <div>
+                      <div class="flex items-center justify-between gap-2 mb-2">
+                        <span class="px-2.5 py-0.5 rounded text-[11px] font-black text-white" style="background:${itemColor}">
+                          הצעה ${idx + 1} • שאלה ${it.questionNum}
+                        </span>
+                        <span class="text-xs font-bold text-slate-700">
+                          מ-${it.levelTitleHe} ← ל-${it.nextLevelTitleHe}
+                        </span>
+                      </div>
+                      <h4 class="text-sm font-extrabold text-slate-900 mb-2">${it.itemTitleHe}</h4>
+                      <p class="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-lg border border-slate-200/80">
+                        💡 <strong>המלצה ליישום:</strong> ${it.levelUpTipHe}
+                      </p>
+                    </div>
+                    <div class="mt-2.5 text-[11px] text-slate-500 font-semibold">תחום: ${it.domainShortHe}</div>
                   </div>
-                  <h4 class="text-sm font-extrabold text-slate-900 mb-1.5">${it.itemTitleHe}</h4>
-                  <p class="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-lg border border-slate-200/80">
-                    💡 <strong>המלצה ליישום:</strong> ${it.levelUpTipHe}
-                  </p>
-                </div>
-                <div class="mt-2 text-[11px] text-slate-500 font-semibold">תחום: ${it.domainShortHe}</div>
-              </div>
-            `
-              )
+                `;
+              })
               .join("")}
           </div>
         </div>
@@ -935,14 +694,11 @@ window.SelfieApp = (function () {
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div>
-              <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 mb-1">
-                🤖 אדריכל סילבוס ופדגוגיה מבוסס פרופיל SELFIE 2.0
-              </span>
               <h2 class="text-lg sm:text-xl font-black text-slate-900">
-                תוכנית עבודה אישית לקורס וכרטיס מדיניות AI מוכן לסילבוס
+                תוכנית עבודה אישית לקורס וכרטיס מדיניות בינה מלאכותית לסילבוס
               </h2>
               <p class="text-xs sm:text-sm text-slate-600 mt-0.5">
-                מותאם אוטומטית לרמת הכשירות שלך (${calc.overallLevel.code} – ${calc.overallScore}%), למסלול ההכשרה שלך ולמודל כשירויות AI 2.0 של משרד החינוך ("ללמוד, ללמד, לשכתב").
+                מותאם לרמת הכשירות שלך (${calc.overallLevel.titleHe} – ${calc.overallScore}%).
               </p>
             </div>
           </div>
@@ -1142,7 +898,7 @@ window.SelfieApp = (function () {
                     מכללת אורנים • תוכנית פריזמה • המרכז לקידום הוראה וחדשנות
                   </div>
                   <h2 class="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-                    תעודת השלמת מיפוי ורפלקציה טכנו-פדגוגית (SELFIE 2.0)
+                    תעודת השלמת מיפוי ורפלקציה טכנו-פדגוגית
                   </h2>
                 </div>
                 <div class="shrink-0">
@@ -1154,50 +910,41 @@ window.SelfieApp = (function () {
                 <p class="text-sm text-slate-600">זאת לתעודה כי:</p>
                 <div class="text-2xl font-black text-indigo-950">${draft.name || "משתתף/ת"}</div>
                 <div class="text-sm font-bold text-slate-700">
-                  ${deptObj.nameHe} • קורס/תחום: "${draft.courseName}"
+                  ${deptObj.nameHe} ${draft.courseName ? `• קורס/תחום: "${draft.courseName}"` : ""}
                 </div>
                 <p class="text-xs sm:text-sm text-slate-700 leading-relaxed">
-                  השלים/ה בהצלחה את תהליך הרפלקציה והמיפוי העצמי במודל <strong>SELFIE 2.0 המשופר</strong> (המשלב את מסגרת DigCompEdu האירופית עם מודל כשירויות הבינה המלאכותית 2.0 של משרד החינוך) במסגרת <strong>${pulseObj.nameHe}</strong>.
+                  השלים/ה בהצלחה את תהליך הרפלקציה והמיפוי העצמי במסגרת <strong>${pulseObj.nameHe}</strong>.
                 </p>
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
                     <div class="text-[11px] text-slate-500">רמת כשירות כוללת</div>
-                    <div class="text-base font-black" style="color:${calc.overallLevel.color}">${calc.overallLevel.code} (${calc.overallScore}%)</div>
+                    <div class="text-base font-black" style="color:${getTrafficLightColor(calc.overallScore)}">${calc.overallLevel.titleHe} (${calc.overallScore}%)</div>
                   </div>
                   <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] text-slate-500">מדד פדגוגיה ו-AI</div>
-                    <div class="text-base font-black text-indigo-900">${calc.pedagogicalLevel.code} (${calc.pedagogicalIndex}%)</div>
-                  </div>
-                  <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] text-slate-500">מסלול מותאם</div>
-                    <div class="text-xs font-black text-slate-800">${calc.assignedTrack.nameHe.split(":")[0]}</div>
-                  </div>
-                  <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <div class="text-[11px] text-slate-500">מזהה מחקרי מזווג</div>
-                    <div class="text-xs font-mono font-bold text-emerald-800">${pid}</div>
+                    <div class="text-[11px] text-slate-500">מדד פדגוגיה ובינה מלאכותית</div>
+                    <div class="text-base font-black text-indigo-900">${calc.pedagogicalLevel.titleHe} (${calc.pedagogicalIndex}%)</div>
                   </div>
                 </div>
 
                 <div class="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs text-indigo-950">
-                  <strong>🎯 יעד שינוי ופיתוח אישי שנבחר:</strong> ${draft.personalGoal || "שילוב מושכל של נתיב מוגן ונתיב משלב AI בהוראה ובהערכה"}
+                  <strong>🎯 יעד שינוי ופיתוח אישי שנבחר:</strong> ${draft.personalGoal || "שילוב מושכל של נתיב מוגן ונתיב משלב בינה מלאכותית בהוראה ובהערכה"}
                 </div>
               </div>
 
               <div class="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
                 <div>תאריך הפקה: <strong>${dateStr}</strong></div>
-                <div>אימות מתודולוגי: <strong>Paired Longitudinal Engine v2.0</strong></div>
                 <button onclick="window.print()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow print:hidden">
-                  🖨️ הדפס / שמור תעודה כ-PDF
+                  🖨️ הדפס / שמור תעודה
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- ePortfolio & Personal Goal Journal (1 col) -->
+          <!-- Personal Goal Journal (1 col) -->
           <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm flex flex-col justify-between space-y-4">
             <div>
-              <h3 class="text-base font-black text-slate-900 mb-1">📂 תיק עבודות רפלקטיבי (ePortfolio)</h3>
+              <h3 class="text-base font-black text-slate-900 mb-1">📂 תיק עבודות רפלקטיבי</h3>
               <p class="text-xs text-slate-500 mb-4">
                 תיעוד יעד השינוי האישי והתוצר היישומי שלך בין פעימה א׳ לפעימה ב׳:
               </p>
@@ -2154,13 +1901,13 @@ window.SelfieApp = (function () {
   }
 
   function buildDigitalBadgeSvg(levelObj, score) {
+    const color = getTrafficLightColor(score);
     return `
       <svg width="96" height="96" viewBox="0 0 100 100">
-        <polygon points="50,4 90,26 90,74 50,96 10,74 10,26" fill="${levelObj.color}" stroke="#e2e8f0" stroke-width="3"/>
+        <polygon points="50,4 90,26 90,74 50,96 10,74 10,26" fill="${color}" stroke="#e2e8f0" stroke-width="3"/>
         <polygon points="50,11 83,30 83,70 50,89 17,70 17,30" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.5" stroke-dasharray="3 2"/>
-        <text x="50" y="34" text-anchor="middle" font-size="9" font-weight="800" fill="#ffffff">SELFIE 2.0</text>
-        <text x="50" y="58" text-anchor="middle" font-size="24" font-weight="900" fill="#ffffff">${levelObj.code}</text>
-        <text x="50" y="75" text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">${score}%</text>
+        <text x="50" y="38" text-anchor="middle" font-size="10" font-weight="800" fill="#ffffff">סלפי אורנים</text>
+        <text x="50" y="64" text-anchor="middle" font-size="22" font-weight="900" fill="#ffffff">${score}%</text>
       </svg>
     `;
   }

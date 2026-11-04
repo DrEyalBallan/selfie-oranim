@@ -93,6 +93,7 @@ window.SelfieScoringEngine = (function () {
     let oldEuTotalSimulatedItems = 0;
 
     const allItemDetails = [];
+    let globalQuestionCounter = 2; // Question 1 is the initial self-definition
 
     config.domains.forEach((dom) => {
       let domNormSum = 0;
@@ -101,25 +102,34 @@ window.SelfieScoringEngine = (function () {
       let domNaCount = 0;
 
       dom.items.forEach((item) => {
-        const ansCode = responses[item.id] || "A1";
-        if (ansCode === "NA") {
+        const qNum = globalQuestionCounter++;
+        const rawAns = responses[item.id];
+        if (!rawAns || rawAns === "NA") {
           domNaCount++;
+          const firstLvl = config.levels[0];
+          const secondLvl = config.levels[1] || firstLvl;
           allItemDetails.push({
             itemId: item.id,
+            questionNum: qNum,
             domainId: dom.id,
             domainTitleHe: dom.titleHe,
+            domainShortHe: dom.shortHe,
+            domainColor: dom.color,
             itemTitleHe: item.titleHe,
-            code: "NA",
+            code: rawAns || "",
+            levelTitleHe: firstLvl.titleHe,
             numeric: null,
             normalized: null,
             oldEuPct: 0,
-            levelObj: null,
-            nextLevelCode: "A1",
+            levelObj: firstLvl,
+            nextLevelCode: secondLvl.code,
+            nextLevelTitleHe: secondLvl.titleHe,
             levelUpTipHe: item.levelUpHe.A1
           });
           return;
         }
 
+        const ansCode = rawAns;
         const num = LEVEL_MAP[ansCode] || 1;
         // True 0-100 normalization: A1(1)->0%, A2(2)->20%, B1(3)->40%, B2(4)->60%, C1(5)->80%, C2(6)->100%
         const norm = ((num - 1) / 5) * 100;
@@ -140,10 +150,12 @@ window.SelfieScoringEngine = (function () {
 
         const levelObj = config.levels.find((l) => l.code === ansCode) || config.levels[0];
         const nextLevelIdx = Math.min(config.levels.length - 1, num); // 1->index 1 (A2), 6->index 5 (C2)
-        const nextLevelCode = config.levels[nextLevelIdx].code;
+        const nextLevelObj = config.levels[nextLevelIdx] || levelObj;
+        const nextLevelCode = nextLevelObj.code;
 
         allItemDetails.push({
           itemId: item.id,
+          questionNum: qNum,
           domainId: dom.id,
           domainTitleHe: dom.titleHe,
           domainShortHe: dom.shortHe,
@@ -151,11 +163,13 @@ window.SelfieScoringEngine = (function () {
           itemTitleHe: item.titleHe,
           itemTitleEn: item.titleEn,
           code: ansCode,
+          levelTitleHe: levelObj.titleHe,
           numeric: num,
           normalized: Math.round(norm * 10) / 10,
           oldEuPct: Math.round(oldPct * 10) / 10,
           levelObj,
           nextLevelCode,
+          nextLevelTitleHe: nextLevelObj.titleHe,
           levelUpTipHe: item.levelUpHe[ansCode] || ""
         });
       });
@@ -239,8 +253,9 @@ window.SelfieScoringEngine = (function () {
 
     // Strengths & Priority Growth Items
     const validItems = allItemDetails.filter((it) => it.numeric !== null);
-    const sortedAsc = [...validItems].sort((a, b) => a.normalized - b.normalized);
-    const sortedDesc = [...validItems].sort((a, b) => b.normalized - a.normalized);
+    const baseItems = validItems.length > 0 ? validItems : allItemDetails;
+    const sortedAsc = [...baseItems].sort((a, b) => (a.normalized ?? 0) - (b.normalized ?? 0));
+    const sortedDesc = [...baseItems].sort((a, b) => (b.normalized ?? 0) - (a.normalized ?? 0));
 
     const priorityGrowthItems = sortedAsc.slice(0, 3);
     const topStrengthItems = sortedDesc.slice(0, 3);
