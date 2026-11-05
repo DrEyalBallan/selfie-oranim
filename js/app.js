@@ -52,6 +52,11 @@ window.SelfieApp = (function () {
   };
 
   function init() {
+    if (window.SELFIE_APP_MODE === "management") {
+      state.activeTab = "dashboard";
+    } else {
+      state.activeTab = "assessment";
+    }
     loadStateFromStorage();
     renderAll();
     syncFromCloudIfNeeded();
@@ -270,14 +275,19 @@ window.SelfieApp = (function () {
     const navContainer = document.getElementById("main-tabs-nav");
     if (!navContainer) return;
 
-    const tabs = [
-      { id: "assessment", icon: "📝", labelHe: "1. שאלון סלפי" },
-      { id: "report", icon: "📊", labelHe: "2. דוח אישי ופירוט ציונים" },
-      { id: "ai_advisor", icon: "🤖", labelHe: "3. יועץ לקורס ולסילבוס" },
-      { id: "badge", icon: "🏅", labelHe: "4. תעודה ותג דיגיטלי" },
-      { id: "dashboard", icon: "👑", labelHe: "5. דשבורד מחקרי" },
-      { id: "methodology", icon: "🔬", labelHe: "6. מעבדת הכשלים" }
-    ];
+    const isManagementSite = window.SELFIE_APP_MODE === "management";
+
+    const tabs = isManagementSite
+      ? [
+          { id: "dashboard", icon: "👑", labelHe: "1. דשבורד מחקרי" },
+          { id: "methodology", icon: "🔬", labelHe: "2. מעבדת הכשלים" },
+          { id: "ai_advisor", icon: "🤖", labelHe: "3. יועץ לקורס ולסילבוס" },
+          { id: "badge", icon: "🏅", labelHe: "4. תעודה ותג דיגיטלי" }
+        ]
+      : [
+          { id: "assessment", icon: "📝", labelHe: "1. שאלון סלפי" },
+          { id: "report", icon: "📊", labelHe: "2. דוח אישי ופירוט ציונים" }
+        ];
 
     navContainer.innerHTML = tabs
       .map((t) => {
@@ -452,7 +462,7 @@ window.SelfieApp = (function () {
         </div>
 
         <!-- Active Domain Header & 3 Questions -->
-        <div class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+        <div id="questions-section-top" class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden scroll-mt-4">
           <div class="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="background: linear-gradient(135deg, ${activeDom.color}, #1e1b4b)">
             <div>
               <div class="text-xs font-bold opacity-90">
@@ -568,7 +578,10 @@ window.SelfieApp = (function () {
   function setDomainIdx(idx) {
     state.activeDomainIdx = idx;
     renderAssessmentView();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const qEl = document.getElementById("questions-section-top");
+    if (qEl) {
+      qEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   // ===========================================================================
