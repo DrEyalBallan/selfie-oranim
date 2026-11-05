@@ -170,6 +170,12 @@ window.SelfieApp = (function () {
     }
   }
 
+  function selectPrePerception(levelCode) {
+    state.currentDraft.prePerception = levelCode;
+    saveStateToStorage();
+    renderAssessmentView();
+  }
+
   function selectItemResponse(itemId, levelCode) {
     state.currentDraft.responses[itemId] = levelCode;
     saveStateToStorage();
@@ -425,13 +431,14 @@ window.SelfieApp = (function () {
               ${config.levels
                 .map((lv) => {
                   const active = draft.prePerception === lv.code;
-                  return `<button onclick="SelfieApp.updateDraftField('prePerception', '${lv.code}'); SelfieApp.renderAssessmentView();"
-                    class="p-3 rounded-xl text-xs sm:text-sm font-bold border-2 transition-all text-center ${
+                  return `<button type="button" onclick="SelfieApp.selectPrePerception('${lv.code}')"
+                    class="p-3 rounded-xl text-xs sm:text-sm font-bold border-2 transition-all text-center flex flex-col items-center justify-center gap-1 ${
                       active
                         ? "text-white shadow-md scale-[1.02]"
                         : "bg-slate-50 text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-white"
                     }" style="${active ? "background:" + lv.color + "; border-color:" + lv.color : ""}">
-                    ${lv.titleHe}
+                    <span>${lv.titleHe}</span>
+                    ${active ? `<span class="text-[11px] font-black">✔ נבחר</span>` : ""}
                   </button>`;
                 })
                 .join("")}
@@ -1931,7 +1938,9 @@ window.SelfieApp = (function () {
     toggleLanguage,
     setRole,
     updateDraftField,
+    selectPrePerception,
     selectItemResponse,
+    renderAssessmentView,
     applyQuickPreset,
     submitCurrentReflection,
     setDomainIdx,
