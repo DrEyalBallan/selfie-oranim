@@ -21,6 +21,7 @@ window.SelfieApp = (function () {
     lang: "he",
     activeTab: "assessment",
     activeDomainIdx: 0,
+    showValidationErrors: false,
     currentDraft: {
       name: "",
       email: "",
@@ -139,7 +140,56 @@ window.SelfieApp = (function () {
     return String(str).replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-indigo-950 underline decoration-indigo-400 decoration-2 underline-offset-2">$1</strong>');
   }
 
+  function getMissingQuestionsInDomain(domIdx) {
+    const config = window.SELFIE_CONFIG;
+    const draft = state.currentDraft;
+    const missing = [];
+    if (domIdx === 0 && !draft.prePerception) {
+      missing.push({ qNum: 1, domIdx: 0 });
+    }
+    const dom = config.domains[domIdx];
+    if (dom) {
+      dom.items.forEach((item, itemIdx) => {
+        const qNum = 2 + domIdx * 3 + itemIdx;
+        if (!draft.responses[item.id]) {
+          missing.push({ qNum, domIdx });
+        }
+      });
+    }
+    return missing;
+  }
+
+  function getFirstMissingQuestionUpTo(maxDomIdx) {
+    for (let d = 0; d <= maxDomIdx; d++) {
+      const missing = getMissingQuestionsInDomain(d);
+      if (missing.length > 0) return missing[0];
+    }
+    return null;
+  }
+
+  function scrollToQuestionCard(qNum) {
+    setTimeout(() => {
+      const el = document.getElementById("q-card-" + qNum);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 50);
+  }
+
   function setTab(tabId) {
+    if (tabId === "report" && window.SELFIE_APP_MODE !== "management") {
+      const missing = getFirstMissingQuestionUpTo(window.SELFIE_CONFIG.domains.length - 1);
+      if (missing) {
+        state.activeTab = "assessment";
+        state.activeDomainIdx = missing.domIdx;
+        state.showValidationErrors = true;
+        renderHeaderNav();
+        renderActiveTab();
+        showToast(`⚠️ חובת מענה: לא ניתן להפיק דוח לפני מענה על כל השאלות (חסרה שאלה ${missing.qNum})`);
+        scrollToQuestionCard(missing.qNum);
+        return;
+      }
+    }
     state.activeTab = tabId;
     renderHeaderNav();
     renderActiveTab();
@@ -222,6 +272,17 @@ window.SelfieApp = (function () {
   }
 
   function submitCurrentReflection() {
+    const missing = getFirstMissingQuestionUpTo(window.SELFIE_CONFIG.domains.length - 1);
+    if (missing) {
+      state.activeDomainIdx = missing.domIdx;
+      state.showValidationErrors = true;
+      renderAssessmentView();
+      showToast(`⚠️ חובת מענה: דילגת על שאלה ${missing.qNum}. יש להשלים את כל השאלות לפני שמירת השאלון.`);
+      scrollToQuestionCard(missing.qNum);
+      return;
+    }
+
+    state.showValidationErrors = false;
     const pid = window.SelfieScoringEngine.hashParticipantId(
       state.currentDraft.email || state.currentDraft.name
     );
@@ -416,34 +477,6 @@ window.SelfieApp = (function () {
                 placeholder="שם הקורס" />
             </div>
           </div>
-
-          <!-- Question 1: Self-Definition -->
-          <div class="mt-5 pt-5 border-t border-slate-200">
-            <div class="mb-3">
-              <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black bg-indigo-600 text-white ml-1.5">
-                שאלה 1
-              </span>
-              <h3 class="inline text-base sm:text-lg font-extrabold text-slate-900">
-                איך את/ה מגדיר/ה את עצמך בשילוב טכנולוגיה ובינה מלאכותית בהוראה?
-              </h3>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-              ${config.levels
-                .map((lv) => {
-                  const active = draft.prePerception === lv.code;
-                  return `<button type="button" onclick="SelfieApp.selectPrePerception('${lv.code}')"
-                    class="p-3 rounded-xl text-xs sm:text-sm font-bold border-2 transition-all text-center flex flex-col items-center justify-center gap-1 ${
-                      active
-                        ? "text-white shadow-md scale-[1.02]"
-                        : "bg-slate-50 text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-white"
-                    }" style="${active ? "background:" + lv.color + "; border-color:" + lv.color : ""}">
-                    <span>${lv.titleHe}</span>
-                    ${active ? `<span class="text-[11px] font-black">✔ נבחר</span>` : ""}
-                  </button>`;
-                })
-                .join("")}
-            </div>
-          </div>
         </div>
 
         <!-- 6 Domains Stepper -->
@@ -451,7 +484,10 @@ window.SelfieApp = (function () {
           ${config.domains
             .map((dom, idx) => {
               const isSelected = state.activeDomainIdx === idx;
-              const answeredCount = dom.items.filter((i) => draft.responses[i.id]).length;
+              const domAnswered = dom.items.filter((i) => draft.responses[i.id]).length;
+              const answeredCount = idx === 0 ? domAnswered + (draft.prePerception ? 1 : 0) : domAnswered;
+              const totalInDom = idx === 0 ? 4 : 3;
+              const isComplete = answeredCount === totalInDom;
               return `<button onclick="SelfieApp.setDomainIdx(${idx})"
                 class="flex flex-col items-start p-3 rounded-2xl border text-right transition-all ${
                   isSelected
@@ -460,7 +496,11 @@ window.SelfieApp = (function () {
                 }" style="${isSelected ? "border-color:" + dom.color : ""}">
                 <div class="flex items-center justify-between w-full mb-1">
                   <span class="text-lg">${dom.icon}</span>
-                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">${answeredCount}/3</span>
+                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                    isComplete
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-slate-100 text-slate-700"
+                  }">${answeredCount}/${totalInDom}</span>
                 </div>
                 <div class="text-xs font-extrabold text-slate-900 line-clamp-1">${dom.num}. ${dom.shortHe}</div>
               </button>`;
@@ -468,14 +508,14 @@ window.SelfieApp = (function () {
             .join("")}
         </div>
 
-        <!-- Active Domain Header & 3 Questions -->
+        <!-- Active Domain Header & Questions -->
         <div id="questions-section-top" class="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden scroll-mt-4">
-          <div class="p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="background: linear-gradient(135deg, ${activeDom.color}, #1e1b4b)">
+          <div class="p-5 bg-slate-50/90 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="border-right: 6px solid ${activeDom.color}">
             <div>
-              <div class="text-xs font-bold opacity-90">
-                תחום ${activeDom.num} מתוך 6
+              <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold mb-1" style="background:${activeDom.color}18; color:${activeDom.color}">
+                <span>תחום ${activeDom.num} מתוך 6</span>
               </div>
-              <h3 class="text-xl font-black mt-0.5 flex items-center gap-2">
+              <h3 class="text-xl font-black text-slate-900 flex items-center gap-2">
                 <span>${activeDom.icon}</span>
                 <span>${activeDom.titleHe}</span>
               </h3>
@@ -483,34 +523,107 @@ window.SelfieApp = (function () {
             <div class="flex items-center gap-2 self-end sm:self-center">
               ${
                 state.activeDomainIdx > 0
-                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx - 1})" class="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold">→ תחום קודם</button>`
+                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx - 1})" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold shadow-xs">→ תחום קודם</button>`
                   : ""
               }
               ${
                 state.activeDomainIdx < config.domains.length - 1
-                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})" class="px-3 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold">התחום הבא ←</button>`
+                  ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})" class="px-3.5 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-bold shadow-xs">התחום הבא ←</button>`
                   : ""
               }
             </div>
           </div>
 
           <div class="divide-y divide-slate-200">
+            ${
+              state.activeDomainIdx === 0
+                ? (() => {
+                    const q1Unanswered = state.showValidationErrors && !draft.prePerception;
+                    return `
+                      <div id="q-card-1" class="p-5 sm:p-6 transition-colors ${
+                        q1Unanswered
+                          ? "bg-rose-50/60 border-r-4 border-rose-500"
+                          : "hover:bg-slate-50/50"
+                      }">
+                        <div class="mb-3">
+                          <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white" style="background:${activeDom.color}">
+                              שאלה 1
+                            </span>
+                            <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
+                              איך את/ה מגדיר/ה את עצמך בשילוב טכנולוגיה ובינה מלאכותית בהוראה?
+                            </h4>
+                            ${
+                              q1Unanswered
+                                ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">⚠️ חובה לענות על שאלה זו</span>`
+                                : ""
+                            }
+                          </div>
+                          <p class="text-xs sm:text-sm text-slate-600 mt-1">בחר/י את ההגדרה שמשקפת באופן הקרוב ביותר את נקודת הפתיחה הנוכחית שלך:</p>
+                        </div>
+
+                        <!-- 6 Progression Statements Grid for Question 1 -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3">
+                          ${config.levels
+                            .map((lv) => {
+                              const isChosen = draft.prePerception === lv.code;
+                              return `
+                                <div onclick="SelfieApp.selectPrePerception('${lv.code}')"
+                                  class="cursor-pointer rounded-xl p-3.5 border-2 transition-all flex flex-col justify-between ${
+                                    isChosen
+                                      ? "bg-indigo-50/70 shadow-md scale-[1.01]"
+                                      : "bg-white border-slate-200/90 hover:border-indigo-300 hover:bg-slate-50"
+                                  }" style="${isChosen ? "border-color:" + lv.color : ""}">
+                                  <div>
+                                    <div class="flex items-center justify-between gap-2 mb-2">
+                                      <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
+                                        ${lv.titleHe}
+                                      </span>
+                                      ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✔ נבחר</span>` : ""}
+                                    </div>
+                                    <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
+                                      ${lv.descHe}
+                                    </p>
+                                  </div>
+                                </div>
+                              `;
+                            })
+                            .join("")}
+                        </div>
+                      </div>
+                    `;
+                  })()
+                : ""
+            }
+
             ${activeDom.items
               .map((item, itemIdx) => {
                 const questionNum = 2 + state.activeDomainIdx * 3 + itemIdx;
                 const selectedCode = draft.responses[item.id] || "";
+                const isUnansweredError = state.showValidationErrors && !selectedCode;
                 const introText = item.introHe[draft.role] || item.introHe.lecturer;
                 const statements = item.statementsHe;
 
                 return `
-                  <div class="p-5 sm:p-6 hover:bg-slate-50/50 transition-colors">
+                  <div id="q-card-${questionNum}" class="p-5 sm:p-6 transition-colors ${
+                    isUnansweredError
+                      ? "bg-rose-50/60 border-r-4 border-rose-500"
+                      : "hover:bg-slate-50/50"
+                  }">
                     <div class="mb-3">
-                      <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white ml-1.5" style="background:${activeDom.color}">
-                        שאלה ${questionNum}
-                      </span>
-                      <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
-                        ${item.titleHe}
-                      </h4>
+                      <div class="flex flex-wrap items-center gap-2 mb-1">
+                        <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white" style="background:${activeDom.color}">
+                          שאלה ${questionNum}
+                        </span>
+                        <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
+                          ${item.titleHe}
+                        </h4>
+                        ${
+                          isUnansweredError
+                            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">⚠️ חובה לענות על שאלה זו</span>`
+                            : ""
+                        }
+                      </div>
                       <p class="text-xs sm:text-sm text-slate-600 mt-1">${introText}</p>
                     </div>
 
@@ -566,7 +679,7 @@ window.SelfieApp = (function () {
               ${
                 state.activeDomainIdx < config.domains.length - 1
                   ? `<button onclick="SelfieApp.setDomainIdx(${state.activeDomainIdx + 1})"
-                      class="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-bold shadow">
+                      class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow">
                       המשך לתחום ${state.activeDomainIdx + 2} מתוך 6 ←
                     </button>`
                   : `<button onclick="SelfieApp.submitCurrentReflection()"
@@ -583,6 +696,18 @@ window.SelfieApp = (function () {
   }
 
   function setDomainIdx(idx) {
+    if (idx > state.activeDomainIdx) {
+      const missing = getFirstMissingQuestionUpTo(idx - 1);
+      if (missing) {
+        state.activeDomainIdx = missing.domIdx;
+        state.showValidationErrors = true;
+        renderAssessmentView();
+        showToast(`⚠️ חובת מענה: לא ניתן להמשיך לעמוד הבא – דילגת על שאלה ${missing.qNum}`);
+        scrollToQuestionCard(missing.qNum);
+        return;
+      }
+    }
+    state.showValidationErrors = false;
     state.activeDomainIdx = idx;
     renderAssessmentView();
     const qEl = document.getElementById("questions-section-top");

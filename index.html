@@ -30,36 +30,28 @@
     class="fixed bottom-5 left-5 z-50 hidden opacity-0 transition-all duration-300 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl text-xs sm:text-sm font-bold border border-indigo-400/30">
   </div>
 
-  <!-- Top Header -->
-  <header class="bg-gradient-to-l from-slate-950 via-indigo-950 to-slate-900 text-white border-b border-indigo-500/20 shadow-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+  <!-- Integrated Page Title Card (Inside the page, not an outer dark frame) -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+    <div class="bg-gradient-to-l from-indigo-50 via-white to-sky-50 rounded-2xl border border-indigo-200/80 shadow-sm p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div class="flex items-start sm:items-center gap-3.5">
-        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-black shadow-lg shadow-indigo-500/30 shrink-0">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-2xl font-black shadow-sm shrink-0">
           🪞
         </div>
         <div>
-          <h1 class="text-xl sm:text-2xl font-black tracking-tight">
-            סלפי החדש – שאלון מיפוי ורפלקציה טכנו-פדגוגית ובינה מלאכותית
-          </h1>
-          <p class="text-xs text-slate-300 mt-0.5">
+          <div class="text-xs font-bold text-indigo-700">
             מכללת אורנים • תוכנית פריזמה
-          </p>
+          </div>
+          <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+            שאלון סלפי – מיפוי ורפלקציה טכנו-פדגוגית ובינה מלאכותית
+          </h1>
         </div>
       </div>
 
-      <div class="flex items-center gap-2 self-end md:self-center">
-        <a href="../פריזמה/index.html"
-          class="px-3.5 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs font-bold border border-indigo-400/30 transition-all">
-          🔗 לפורטל פריזמה אורנים
-        </a>
+      <div class="flex flex-wrap items-center gap-2 self-start md:self-center">
+        <nav id="main-tabs-nav" class="flex items-center gap-2"></nav>
       </div>
     </div>
-
-    <!-- Main Navigation Tabs -->
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 pb-3 overflow-x-auto">
-      <nav id="main-tabs-nav" class="flex items-center gap-2"></nav>
-    </div>
-  </header>
+  </div>
 
   <!-- Main Content Container -->
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-5" id="main-view-container"></main>
