@@ -185,7 +185,7 @@ window.SelfieApp = (function () {
         state.showValidationErrors = true;
         renderHeaderNav();
         renderActiveTab();
-        showToast(`⚠️ חובת מענה: לא ניתן להפיק דוח לפני מענה על כל השאלות (חסרה שאלה ${missing.qNum})`);
+        showToast(`חובת מענה: לא ניתן להפיק דוח לפני מענה על כל השאלות (חסרה שאלה ${missing.qNum})`);
         scrollToQuestionCard(missing.qNum);
         return;
       }
@@ -277,7 +277,7 @@ window.SelfieApp = (function () {
       state.activeDomainIdx = missing.domIdx;
       state.showValidationErrors = true;
       renderAssessmentView();
-      showToast(`⚠️ חובת מענה: דילגת על שאלה ${missing.qNum}. יש להשלים את כל השאלות לפני שמירת השאלון.`);
+      showToast(`חובת מענה: דילגת על שאלה ${missing.qNum}. יש להשלים את כל השאלות לפני שמירת השאלון.`);
       scrollToQuestionCard(missing.qNum);
       return;
     }
@@ -346,26 +346,25 @@ window.SelfieApp = (function () {
 
     const tabs = isManagementSite
       ? [
-          { id: "dashboard", icon: "👑", labelHe: "1. דשבורד מחקרי" },
-          { id: "methodology", icon: "🔬", labelHe: "2. מעבדת הכשלים" },
-          { id: "ai_advisor", icon: "🤖", labelHe: "3. יועץ לקורס ולסילבוס" },
-          { id: "badge", icon: "🏅", labelHe: "4. תעודה ותג דיגיטלי" }
+          { id: "dashboard", labelHe: "1. דשבורד מחקרי" },
+          { id: "methodology", labelHe: "2. מעבדת הכשלים" },
+          { id: "ai_advisor", labelHe: "3. יועץ לקורס ולסילבוס" },
+          { id: "badge", labelHe: "4. תעודה ותג דיגיטלי" }
         ]
       : [
-          { id: "assessment", icon: "📝", labelHe: "1. שאלון סלפי" },
-          { id: "report", icon: "📊", labelHe: "2. דוח אישי ופירוט ציונים" }
+          { id: "assessment", labelHe: "1. שאלון סלפי" },
+          { id: "report", labelHe: "2. דוח אישי ופירוט ציונים" }
         ];
 
     navContainer.innerHTML = tabs
       .map((t) => {
         const active = state.activeTab === t.id;
         return `<button onclick="SelfieApp.setTab('${t.id}')"
-          class="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+          class="flex items-center px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
             active
               ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20 scale-[1.02]"
               : "bg-white/80 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 border border-slate-200/80"
           }">
-          <span>${t.icon}</span>
           <span>${t.labelHe}</span>
         </button>`;
       })
@@ -401,12 +400,11 @@ window.SelfieApp = (function () {
 
     main.innerHTML = `
       <div class="space-y-6">
-        <!-- Profile & Question 1 Card -->
+        <!-- Profile Card -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <h2 class="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
-              <span>🎯</span>
-              <span>פרטי משיב/ה</span>
+            <h2 class="text-lg sm:text-xl font-black text-slate-900">
+              פרטי משיב/ה
             </h2>
 
             <!-- Role Switcher Pills -->
@@ -415,12 +413,11 @@ window.SelfieApp = (function () {
                 .map((prof) => {
                   const active = draft.role === prof.id;
                   return `<button onclick="SelfieApp.setRole('${prof.id}')"
-                    class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                    class="flex items-center px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                       active
                         ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300"
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }">
-                    <span>${prof.icon}</span>
                     <span>${prof.labelHe}</span>
                   </button>`;
                 })
@@ -495,14 +492,13 @@ window.SelfieApp = (function () {
                     : "bg-white/70 border-slate-200 hover:bg-white"
                 }" style="${isSelected ? "border-color:" + dom.color : ""}">
                 <div class="flex items-center justify-between w-full mb-1">
-                  <span class="text-lg">${dom.icon}</span>
+                  <span class="text-xs font-extrabold text-slate-900 line-clamp-1">${dom.num}. ${dom.shortHe}</span>
                   <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${
                     isComplete
                       ? "bg-emerald-100 text-emerald-800"
                       : "bg-slate-100 text-slate-700"
                   }">${answeredCount}/${totalInDom}</span>
                 </div>
-                <div class="text-xs font-extrabold text-slate-900 line-clamp-1">${dom.num}. ${dom.shortHe}</div>
               </button>`;
             })
             .join("")}
@@ -515,9 +511,8 @@ window.SelfieApp = (function () {
               <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold mb-1" style="background:${activeDom.color}18; color:${activeDom.color}">
                 <span>תחום ${activeDom.num} מתוך 6</span>
               </div>
-              <h3 class="text-xl font-black text-slate-900 flex items-center gap-2">
-                <span>${activeDom.icon}</span>
-                <span>${activeDom.titleHe}</span>
+              <h3 class="text-xl font-black text-slate-900">
+                ${activeDom.titleHe}
               </h3>
             </div>
             <div class="flex items-center gap-2 self-end sm:self-center">
@@ -555,7 +550,7 @@ window.SelfieApp = (function () {
                             </h4>
                             ${
                               q1Unanswered
-                                ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">⚠️ חובה לענות על שאלה זו</span>`
+                                ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">חובה לענות על שאלה זו</span>`
                                 : ""
                             }
                           </div>
@@ -579,7 +574,7 @@ window.SelfieApp = (function () {
                                       <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
                                         ${lv.titleHe}
                                       </span>
-                                      ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✔ נבחר</span>` : ""}
+                                      ${isChosen ? `<span class="text-xs font-bold text-indigo-700">נבחר</span>` : ""}
                                     </div>
                                     <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
                                       ${lv.descHe}
@@ -620,7 +615,7 @@ window.SelfieApp = (function () {
                         </h4>
                         ${
                           isUnansweredError
-                            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">⚠️ חובה לענות על שאלה זו</span>`
+                            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">חובה לענות על שאלה זו</span>`
                             : ""
                         }
                       </div>
@@ -645,7 +640,7 @@ window.SelfieApp = (function () {
                                   <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
                                     ${lv.titleHe}
                                   </span>
-                                  ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✔ נבחר</span>` : ""}
+                                  ${isChosen ? `<span class="text-xs font-bold text-indigo-700">נבחר</span>` : ""}
                                 </div>
                                 <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
                                   ${formatBold(stText)}
@@ -683,8 +678,7 @@ window.SelfieApp = (function () {
                       המשך לתחום ${state.activeDomainIdx + 2} מתוך 6 ←
                     </button>`
                   : `<button onclick="SelfieApp.submitCurrentReflection()"
-                      class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25 flex items-center gap-2">
-                      <span>📊</span>
+                      class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25">
                       <span>שמור שאלון והפק דוח אישי</span>
                     </button>`
               }
@@ -702,7 +696,7 @@ window.SelfieApp = (function () {
         state.activeDomainIdx = missing.domIdx;
         state.showValidationErrors = true;
         renderAssessmentView();
-        showToast(`⚠️ חובת מענה: לא ניתן להמשיך לעמוד הבא – דילגת על שאלה ${missing.qNum}`);
+        showToast(`חובת מענה: לא ניתן להמשיך לעמוד הבא – דילגת על שאלה ${missing.qNum}`);
         scrollToQuestionCard(missing.qNum);
         return;
       }
@@ -730,7 +724,7 @@ window.SelfieApp = (function () {
         <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-200">
             <div>
-              <h2 class="text-lg sm:text-xl font-black text-slate-900">📊 פירוט הציונים לפי תחומים</h2>
+              <h2 class="text-lg sm:text-xl font-black text-slate-900">פירוט הציונים לפי תחומים</h2>
               <div class="flex flex-wrap items-center gap-3 mt-2 text-xs font-bold text-slate-600">
                 <span class="inline-flex items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full inline-block" style="background:#dc2626"></span>
@@ -765,9 +759,8 @@ window.SelfieApp = (function () {
                 return `
                   <div class="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80">
                     <div class="flex items-center justify-between text-xs sm:text-sm font-bold mb-2">
-                      <span class="flex items-center gap-2 text-slate-900">
-                        <span>${d.icon}</span>
-                        <span>${d.num}. ${d.titleHe}</span>
+                      <span class="text-slate-900">
+                        ${d.num}. ${d.titleHe}
                       </span>
                       <span class="flex items-center gap-2">
                         <span class="px-2.5 py-0.5 rounded-lg text-white text-xs font-black" style="background:${barColor}">
@@ -788,7 +781,7 @@ window.SelfieApp = (function () {
 
         <!-- Top 3 Priority Growth Recommendations -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
-          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-4">🚀 3 הצעות ממוקדות לשיפור</h3>
+          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-4">3 הצעות ממוקדות לשיפור</h3>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${calc.priorityGrowthItems
@@ -807,7 +800,7 @@ window.SelfieApp = (function () {
                       </div>
                       <h4 class="text-sm font-extrabold text-slate-900 mb-2">${it.itemTitleHe}</h4>
                       <p class="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-lg border border-slate-200/80">
-                        💡 <strong>המלצה ליישום:</strong> ${it.levelUpTipHe}
+                        <strong>המלצה ליישום:</strong> ${it.levelUpTipHe}
                       </p>
                     </div>
                     <div class="mt-2.5 text-[11px] text-slate-500 font-semibold">תחום: ${it.domainShortHe}</div>
