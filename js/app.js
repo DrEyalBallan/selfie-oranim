@@ -4,7 +4,15 @@
 
 window.SelfieApp = (function () {
   const STORAGE_KEY_COHORT = "selfie2_cohort_submissions_v1";
+  const STORAGE_KEY_REAL = "selfie2_real_submissions_v1";
+  const STORAGE_KEY_INCLUDE_DEMO = "selfie2_include_demo_v1";
   const STORAGE_KEY_CURRENT = "selfie2_current_draft_v3";
+  const CLOUD_API_URL =
+    typeof window !== "undefined" &&
+    window.location &&
+    window.location.hostname === "selfie-oranim.pages.dev"
+      ? "/api/selfie"
+      : "https://selfie-oranim.pages.dev/api/selfie";
 
   // צבעי רמזור (גווני אדום -> צהוב -> ירוק) לפי ציון 0-100
   function getTrafficLightColor(score) {
@@ -43,14 +51,41 @@ window.SelfieApp = (function () {
     },
     dashboardFilterDept: "all",
     dashboardFilterRole: "all",
-    dashboardCohortView: "paired",
+    dashboardCohortView: "raw_all",
     dashboardComparisonMode: "paired_valid",
+    rawSearchQuery: "",
+    inspectedSubmissionId: null,
+    cloudConnected: false,
+    lastCloudSync: "",
+    includeDemoData: true,
+    realSubmissions: [],
     simAttritionPreN: 17,
     simAttritionPostN: 9,
     simDropoutBias: 18,
     simB1Count: 31,
     cohortSubmissions: []
   };
+
+  function isDemoRecord(sub) {
+    if (!sub || !sub.id) return false;
+    return String(sub.id).startsWith("demo_");
+  }
+
+  function rebuildEffectiveSubmissions() {
+    const realList = Array.isArray(state.realSubmissions) ? state.realSubmissions : [];
+    const demoList = Array.isArray(window.SELFIE_DEMO_COHORT)
+      ? window.SELFIE_DEMO_COHORT.map((d) => ({ ...d, isDemo: true }))
+      : [];
+    if (state.includeDemoData) {
+      const seen = new Set(realList.map((r) => r.id));
+      state.cohortSubmissions = [
+        ...realList.map((r) => ({ ...r, isDemo: false })),
+        ...demoList.filter((d) => !seen.has(d.id))
+      ];
+    } else {
+      state.cohortSubmissions = realList.map((r) => ({ ...r, isDemo: false }));
+    }
+  }
 
   function init() {
     if (window.SELFIE_APP_MODE === "management") {
@@ -60,34 +95,51 @@ window.SelfieApp = (function () {
     }
     loadStateFromStorage();
     renderAll();
-    syncFromCloudIfNeeded();
+    syncFromCloudIfNeeded(false);
   }
 
   function loadStateFromStorage() {
     try {
-      const savedCohort = localStorage.getItem(STORAGE_KEY_COHORT);
-      if (savedCohort) {
-        const parsed = JSON.parse(savedCohort);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          state.cohortSubmissions = parsed;
-        } else {
-          state.cohortSubmissions = [...window.SELFIE_DEMO_COHORT];
+      const savedReal = localStorage.getItem(STORAGE_KEY_REAL);
+      if (savedReal) {
+        const parsedReal = JSON.parse(savedReal);
+        if (Array.isArray(parsedReal)) {
+          state.realSubmissions = parsedReal.filter((s) => !isDemoRecord(s));
         }
       } else {
-        state.cohortSubmissions = [...window.SELFIE_DEMO_COHORT];
+        const savedCohort = localStorage.getItem(STORAGE_KEY_COHORT);
+        if (savedCohort) {
+          const parsed = JSON.parse(savedCohort);
+          if (Array.isArray(parsed)) {
+            state.realSubmissions = parsed.filter((s) => !isDemoRecord(s));
+          }
+        }
       }
+
+      const savedDemoFlag = localStorage.getItem(STORAGE_KEY_INCLUDE_DEMO);
+      if (savedDemoFlag !== null) {
+        state.includeDemoData = savedDemoFlag === "true";
+      } else {
+        state.includeDemoData = true;
+      }
+
+      rebuildEffectiveSubmissions();
 
       // איפוס טיוטה קודמת כך שבכל פתיחה מחדש של הקישור השאלון ייפתח ריק לחלוטין
       localStorage.removeItem(STORAGE_KEY_CURRENT);
       localStorage.removeItem("selfie2_current_draft_v1");
       localStorage.removeItem("selfie2_current_draft_v2");
     } catch (e) {
-      state.cohortSubmissions = [...window.SELFIE_DEMO_COHORT];
+      state.realSubmissions = [];
+      state.includeDemoData = true;
+      rebuildEffectiveSubmissions();
     }
   }
 
   function saveStateToStorage() {
     try {
+      localStorage.setItem(STORAGE_KEY_REAL, JSON.stringify(state.realSubmissions));
+      localStorage.setItem(STORAGE_KEY_INCLUDE_DEMO, state.includeDemoData ? "true" : "false");
       localStorage.setItem(STORAGE_KEY_COHORT, JSON.stringify(state.cohortSubmissions));
     } catch (e) {
       console.warn("Storage save warning:", e);
@@ -101,25 +153,42 @@ window.SelfieApp = (function () {
     }
   }
 
-  async function syncFromCloudIfNeeded() {
+  async function syncFromCloudIfNeeded(showMessage) {
     try {
-      const resp = await fetch("/api/selfie");
+      const resp = await fetch(CLOUD_API_URL, { cache: "no-store" });
       if (resp.ok) {
         const data = await resp.json();
-        if (data && Array.isArray(data.submissions) && data.submissions.length > 0) {
-          state.cohortSubmissions = data.submissions;
+        if (data && data.status === "ok") {
+          state.cloudConnected = Boolean(data.cloudConnected);
+          state.lastCloudSync = new Date().toLocaleTimeString("he-IL", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          });
+          if (Array.isArray(data.submissions)) {
+            state.realSubmissions = data.submissions.filter((s) => !isDemoRecord(s));
+          }
+          if (typeof data.includeDemo === "boolean") {
+            state.includeDemoData = data.includeDemo;
+          }
+          rebuildEffectiveSubmissions();
           saveStateToStorage();
           if (state.activeTab === "dashboard") renderActiveTab();
+          if (showMessage) {
+            showToast(`הנתונים סונכרנו מהענן (${state.realSubmissions.length} שאלונים אמיתיים במאגר)`);
+          }
         }
       }
     } catch (e) {
-      // Running locally without Cloudflare Functions; local storage is used seamlessly
+      if (showMessage) {
+        showToast("לא ניתן היה להתחבר לענן כעת – מוצגים הנתונים השמורים מקומית");
+      }
     }
   }
 
   async function pushSubmissionToCloud(submissionRecord) {
     try {
-      await fetch("/api/selfie", {
+      const resp = await fetch(CLOUD_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -127,6 +196,15 @@ window.SelfieApp = (function () {
           submission: submissionRecord
         })
       });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && Array.isArray(data.submissions)) {
+          state.cloudConnected = Boolean(data.cloudConnected);
+          state.realSubmissions = data.submissions.filter((s) => !isDemoRecord(s));
+          rebuildEffectiveSubmissions();
+          saveStateToStorage();
+        }
+      }
     } catch (e) {
       // Saved locally
     }
@@ -302,19 +380,23 @@ window.SelfieApp = (function () {
       responses: { ...state.currentDraft.responses }
     };
 
-    // Replace existing record for same participantHash + pulse so paired structure stays clean
-    const existingIdx = state.cohortSubmissions.findIndex(
-      (s) => s.participantHash === pid && s.pulse === newRecord.pulse
-    );
+    // Replace existing record for same participantHash + pulse (if not anonymous) so paired structure stays clean
+    const isAnon = String(pid).startsWith("anon_");
+    const existingIdx = isAnon
+      ? -1
+      : state.realSubmissions.findIndex(
+          (s) => s.participantHash === pid && s.pulse === newRecord.pulse
+        );
     if (existingIdx !== -1) {
-      state.cohortSubmissions[existingIdx] = newRecord;
+      state.realSubmissions[existingIdx] = newRecord;
     } else {
-      state.cohortSubmissions.unshift(newRecord);
+      state.realSubmissions.unshift(newRecord);
     }
 
+    rebuildEffectiveSubmissions();
     saveStateToStorage();
     pushSubmissionToCloud(newRecord);
-    showToast("השאלון נשמר בהצלחה!");
+    showToast("השאלון נשמר בהצלחה בענן!");
     setTab("report");
   }
 
@@ -1133,16 +1215,103 @@ window.SelfieApp = (function () {
     const ps = analysis.pairedStats;
     const us = analysis.unmatchedStats;
     const isPairedMode = state.dashboardComparisonMode === "paired_valid";
+    const demoCount = (window.SELFIE_DEMO_COHORT || []).length;
+    const realCount = state.realSubmissions.length;
 
     main.innerHTML = `
       <div class="space-y-6">
+        <!-- Cloud Database, Raw Questionnaire Management & Backup Control Panel -->
+        <div class="bg-gradient-to-l from-indigo-50/90 via-white to-emerald-50/70 rounded-2xl border-2 border-indigo-200/90 p-5 shadow-sm">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200/80">
+            <div>
+              <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-black ${
+                  state.cloudConnected
+                    ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                    : "bg-amber-100 text-amber-900 border border-amber-300"
+                }">
+                  ${state.cloudConnected ? "מחובר למסד הנתונים בענן (Cloudflare KV)" : "שמירה מקומית + סנכרון ענן"}
+                </span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-900">
+                  שאלונים אמיתיים שנשלחו: ${realCount}
+                </span>
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                  שאלוני הדגמה: ${state.includeDemoData ? demoCount + " (מוצגים)" : "מוסתרים"}
+                </span>
+                ${
+                  state.lastCloudSync
+                    ? `<span class="text-[11px] text-slate-500 font-medium">סנכרון אחרון: ${state.lastCloudSync}</span>`
+                    : ""
+                }
+              </div>
+              <h2 class="text-lg sm:text-xl font-black text-slate-900">
+                פאנל ניהול שאלונים, תשובות גולמיות (שאלות 1–19), סטטיסטיקה וגיבוי
+              </h2>
+            </div>
+
+            <!-- Action Buttons: Refresh & Demo Toggle -->
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="SelfieApp.syncFromCloudIfNeeded(true)"
+                class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 text-xs font-bold shadow-xs">
+                רענן נתונים מהענן
+              </button>
+              <button onclick="SelfieApp.toggleIncludeDemoData()"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all shadow-xs ${
+                  state.includeDemoData
+                    ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300"
+                    : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                }">
+                ${
+                  state.includeDemoData
+                    ? `הסתר נתוני הדגמה (הצג רק ${realCount} שאלונים אמיתיים)`
+                    : `הצג גם נתוני הדגמה (+${demoCount} שאלונים)`
+                }
+              </button>
+            </div>
+          </div>
+
+          <!-- Export, Backup & Restore Toolbar -->
+          <div class="pt-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="SelfieApp.exportAllRawResponsesCsv()"
+                class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-sm">
+                ייצוא כל התשובות הגולמיות לאקסל (CSV מלא – שאלות 1 עד 19)
+              </button>
+
+              <button onclick="SelfieApp.exportPairedCsv()"
+                class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm">
+                ייצוא קובץ מחקר מזווג (CSV / SPSS)
+              </button>
+
+              <button onclick="SelfieApp.exportBackupJson()"
+                class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow-sm">
+                הורדת גיבוי מלא (JSON)
+              </button>
+
+              <label class="cursor-pointer px-3.5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-bold shadow-xs">
+                <span>שחזור מגיבוי (העלאת JSON)</span>
+                <input type="file" accept=".json,application/json" class="hidden" onchange="SelfieApp.handleRestoreBackupFile(event)" />
+              </label>
+            </div>
+
+            ${
+              realCount > 0
+                ? `<button onclick="SelfieApp.clearAllRealSubmissions()"
+                    class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold">
+                    איפוס שאלוני בדיקה (${realCount})
+                  </button>`
+                : ""
+            }
+          </div>
+        </div>
+
         <!-- Dashboard Header & Filters -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div>
               <div class="flex items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-100 text-indigo-900">
-                  👑 חדר מחקר וניהול מוסדי • אורנים – פריזמה
+                  חדר מחקר וניהול מוסדי • אורנים – פריזמה
                 </span>
                 <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900">
                   מנוע השוואה מזווגת (Paired Within-Subjects)
@@ -1156,7 +1325,7 @@ window.SelfieApp = (function () {
             <div class="flex flex-wrap items-center gap-2">
               <select onchange="SelfieApp.setDashboardDept(this.value)"
                 class="px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold bg-white">
-                <option value="all" ${state.dashboardFilterDept === "all" ? "selected" : ""}>🏛️ כלל החוגים והיחידות (${state.cohortSubmissions.length} שאלונים)</option>
+                <option value="all" ${state.dashboardFilterDept === "all" ? "selected" : ""}>כלל החוגים והיחידות (${state.cohortSubmissions.length} שאלונים מוצגים)</option>
                 ${config.departments
                   .map(
                     (d) =>
@@ -1164,12 +1333,6 @@ window.SelfieApp = (function () {
                   )
                   .join("")}
               </select>
-
-              <button onclick="SelfieApp.exportPairedCsv()"
-                class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm flex items-center gap-1.5">
-                <span>📥</span>
-                <span>ייצוא קובץ מחקר מזווג (CSV / SPSS)</span>
-              </button>
             </div>
           </div>
 
@@ -1331,17 +1494,25 @@ window.SelfieApp = (function () {
           </div>
         </div>
 
-        <!-- 3-Cohort Participant Table & Attrition Follow-up Manager -->
+        <!-- 4-View Participant & Raw Responses Table Manager -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
             <div class="flex flex-wrap gap-2">
+              <button onclick="SelfieApp.setDashboardCohortView('raw_all')"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  state.dashboardCohortView === "raw_all"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-indigo-50 text-indigo-900 border border-indigo-200 hover:bg-indigo-100"
+                }">
+                כל השאלונים והתשובות הגולמיות – שאלות 1–19 (${state.cohortSubmissions.length})
+              </button>
               <button onclick="SelfieApp.setDashboardCohortView('paired')"
                 class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
                   state.dashboardCohortView === "paired"
                     ? "bg-emerald-600 text-white"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }">
-                ✅ משיבים מזווגים – ענו בשתי הפעימות (${analysis.cohorts.paired.length})
+                משיבים מזווגים – ענו בשתי הפעימות (${analysis.cohorts.paired.length})
               </button>
               <button onclick="SelfieApp.setDashboardCohortView('attrition')"
                 class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
@@ -1349,7 +1520,7 @@ window.SelfieApp = (function () {
                     ? "bg-amber-600 text-white"
                     : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
                 }">
-                ⏳ ענו רק בפעימה א׳ – נדרשת תזכורת לפעימה ב׳ (${analysis.cohorts.attrition.length})
+                ענו רק בפעימה א׳ – נדרשת תזכורת לפעימה ב׳ (${analysis.cohorts.attrition.length})
               </button>
               <button onclick="SelfieApp.setDashboardCohortView('late')"
                 class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
@@ -1357,14 +1528,14 @@ window.SelfieApp = (function () {
                     ? "bg-purple-600 text-white"
                     : "bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100"
                 }">
-                🆕 ענו רק בפעימה ב׳ – מופרדים מהמחקר המזווג (${analysis.cohorts.lateJoiners.length})
+                ענו רק בפעימה ב׳ – מופרדים מהמחקר המזווג (${analysis.cohorts.lateJoiners.length})
               </button>
             </div>
 
             ${
               state.dashboardCohortView === "attrition" && analysis.cohorts.attrition.length > 0
                 ? `<button onclick="SelfieApp.copyAttritionReminder()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm">
-                    📩 העתק הודעת תזכורת ממוקדת לחוגים להשלמת הזיווג
+                    העתק הודעת תזכורת ממוקדת לחוגים להשלמת הזיווג
                   </button>`
                 : ""
             }
@@ -1378,8 +1549,219 @@ window.SelfieApp = (function () {
     `;
   }
 
+  function renderRawAllSubmissionsTableHtml() {
+    const config = window.SELFIE_CONFIG;
+    const q = (state.rawSearchQuery || "").trim().toLowerCase();
+
+    const filtered = state.cohortSubmissions.filter((s) => {
+      if (state.dashboardFilterDept !== "all" && s.department !== state.dashboardFilterDept) {
+        return false;
+      }
+      if (!q) return true;
+      const deptName = config.departments.find((d) => d.id === s.department)?.nameHe || "";
+      const haystack = `${s.name || ""} ${s.email || ""} ${s.courseName || ""} ${deptName} ${s.participantHash || ""}`.toLowerCase();
+      return haystack.includes(q);
+    });
+
+    const levelByCode = {};
+    config.levels.forEach((lv) => {
+      levelByCode[lv.code] = lv;
+    });
+
+    const allItemsOrdered = [];
+    config.domains.forEach((dom, domIdx) => {
+      dom.items.forEach((item, itemIdx) => {
+        allItemsOrdered.push({
+          qNum: 2 + domIdx * 3 + itemIdx,
+          id: item.id,
+          titleHe: item.titleHe,
+          domainShortHe: dom.shortHe
+        });
+      });
+    });
+
+    return `
+      <div class="space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex-1 max-w-md">
+            <input type="text" value="${state.rawSearchQuery || ""}"
+              oninput="SelfieApp.setRawSearchQuery(this.value)"
+              placeholder="חיפוש לפי שם משיב/ה, אימייל, חוג, קורס או מזהה..."
+              class="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:border-indigo-500 focus:outline-none" />
+          </div>
+          <div class="text-xs font-bold text-slate-600">
+            מציג ${filtered.length} מתוך ${state.cohortSubmissions.length} שאלונים • לחץ על "פירוט 19 התשובות" לצפייה בכל תשובות המשיב/ה
+          </div>
+        </div>
+
+        ${
+          filtered.length === 0
+            ? `<div class="p-8 text-center text-sm text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                לא נמצאו שאלונים התואמים לחיפוש הנוכחי.
+              </div>`
+            : `
+              <table class="w-full text-right text-xs border-collapse">
+                <thead class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                  <tr>
+                    <th class="p-3">סוג</th>
+                    <th class="p-3">תאריך</th>
+                    <th class="p-3">שם המשיב/ה</th>
+                    <th class="p-3">תפקיד וחוג</th>
+                    <th class="p-3">פעימה</th>
+                    <th class="p-3">שאלה 1 (הגדרה עצמית)</th>
+                    <th class="p-3">ציון כולל</th>
+                    <th class="p-3">פעולות וניהול</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  ${filtered
+                    .map((s) => {
+                      const calc = window.SelfieScoringEngine.calculateSubmissionScores(s);
+                      const deptName = config.departments.find((d) => d.id === s.department)?.nameHe || s.department;
+                      const roleName = config.profiles[s.role]?.labelHe || s.role;
+                      const pulseName = config.pulses.find((p) => p.id === s.pulse)?.shortHe || s.pulse;
+                      const q1Lv = levelByCode[s.prePerception];
+                      const dateStr = s.timestamp
+                        ? new Date(s.timestamp).toLocaleDateString("he-IL", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })
+                        : "-";
+                      const isInspected = state.inspectedSubmissionId === s.id;
+                      const demoFlag = isDemoRecord(s);
+                      const scoreColor = getTrafficLightColor(calc.overallScore);
+
+                      return `
+                        <tr class="hover:bg-slate-50/80 ${isInspected ? "bg-indigo-50/40" : ""}">
+                          <td class="p-3">
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold ${
+                              demoFlag
+                                ? "bg-slate-200 text-slate-700"
+                                : "bg-emerald-100 text-emerald-800"
+                            }">
+                              ${demoFlag ? "הדגמה" : "אמיתי"}
+                            </span>
+                          </td>
+                          <td class="p-3 text-slate-500 whitespace-nowrap">${dateStr}</td>
+                          <td class="p-3">
+                            <div class="font-bold text-slate-900">${s.name || "משיב/ה"}</div>
+                            ${s.email ? `<div class="text-[11px] text-slate-500 font-mono">${s.email}</div>` : ""}
+                            ${s.courseName ? `<div class="text-[11px] text-indigo-700">קורס: ${s.courseName}</div>` : ""}
+                          </td>
+                          <td class="p-3">
+                            <div class="font-bold text-slate-800">${deptName}</div>
+                            <div class="text-[11px] text-slate-500">${roleName}</div>
+                          </td>
+                          <td class="p-3 font-bold text-slate-800">${pulseName}</td>
+                          <td class="p-3">
+                            ${
+                              q1Lv
+                                ? `<span class="px-2 py-0.5 rounded text-white text-[11px] font-bold" style="background:${q1Lv.color}">${q1Lv.titleHe}</span>`
+                                : `<span class="text-slate-400">לא סומן</span>`
+                            }
+                          </td>
+                          <td class="p-3">
+                            <span class="px-2.5 py-1 rounded-lg text-white font-black text-xs inline-block" style="background:${scoreColor}">
+                              ${calc.overallScore}% • ${calc.overallLevel.titleHe}
+                            </span>
+                          </td>
+                          <td class="p-3">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                              <button onclick="SelfieApp.toggleInspectSubmission('${s.id}')"
+                                class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  isInspected
+                                    ? "bg-indigo-600 text-white"
+                                    : "bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                }">
+                                ${isInspected ? "סגור פירוט" : "פירוט 19 התשובות"}
+                              </button>
+                              ${
+                                !demoFlag
+                                  ? `<button onclick="SelfieApp.deleteSubmissionById('${s.id}')"
+                                      class="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold">
+                                      מחק
+                                    </button>`
+                                  : ""
+                              }
+                            </div>
+                          </td>
+                        </tr>
+                        ${
+                          isInspected
+                            ? `
+                              <tr class="bg-slate-50/90">
+                                <td colspan="8" class="p-4 border-b-2 border-indigo-200">
+                                  <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                    <div class="font-black text-slate-900 text-xs sm:text-sm">
+                                      פירוט מלא של 19 התשובות של ${s.name || "משיב/ה"} (ציון כולל: ${calc.overallScore}% – ${calc.overallLevel.titleHe})
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                      ${calc.domainResults
+                                        .map(
+                                          (d) =>
+                                            `<span class="px-2 py-0.5 rounded text-[11px] font-bold text-white" style="background:${getTrafficLightColor(
+                                              d.score
+                                            )}">תחום ${d.num}: ${d.score}%</span>`
+                                        )
+                                        .join("")}
+                                    </div>
+                                  </div>
+                                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                    <div class="p-2.5 rounded-xl bg-white border border-slate-200">
+                                      <div class="text-[11px] font-black text-indigo-700">שאלה 1 • הגדרה עצמית</div>
+                                      <div class="text-xs font-bold text-slate-900 mt-0.5">איך את/ה מגדיר/ה את עצמך</div>
+                                      <div class="mt-1.5">
+                                        ${
+                                          q1Lv
+                                            ? `<span class="px-2 py-0.5 rounded text-[11px] font-black text-white" style="background:${q1Lv.color}">${q1Lv.titleHe}</span>`
+                                            : `<span class="text-slate-400">לא סומן</span>`
+                                        }
+                                      </div>
+                                    </div>
+                                    ${allItemsOrdered
+                                      .map((qItem) => {
+                                        const ansCode = (s.responses && s.responses[qItem.id]) || "";
+                                        const ansLv = levelByCode[ansCode];
+                                        return `
+                                          <div class="p-2.5 rounded-xl bg-white border border-slate-200">
+                                            <div class="text-[11px] font-black text-slate-500">שאלה ${qItem.qNum} • ${qItem.domainShortHe}</div>
+                                            <div class="text-xs font-bold text-slate-900 mt-0.5">${qItem.titleHe}</div>
+                                            <div class="mt-1.5">
+                                              ${
+                                                ansLv
+                                                  ? `<span class="px-2 py-0.5 rounded text-[11px] font-black text-white" style="background:${ansLv.color}">${ansLv.titleHe} (${ansLv.normalizedScore}%)</span>`
+                                                  : `<span class="text-slate-400">לא נענה</span>`
+                                              }
+                                            </div>
+                                          </div>
+                                        `;
+                                      })
+                                      .join("")}
+                                  </div>
+                                </td>
+                              </tr>
+                            `
+                            : ""
+                        }
+                      `;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            `
+        }
+      </div>
+    `;
+  }
+
   function renderCohortTableHtml(analysis) {
     const config = window.SELFIE_CONFIG;
+    if (state.dashboardCohortView === "raw_all") {
+      return renderRawAllSubmissionsTableHtml();
+    }
     if (state.dashboardCohortView === "paired") {
       if (analysis.cohorts.paired.length === 0) {
         return `<div class="p-6 text-center text-sm text-slate-500">אין עדיין משיבים מזווגים בחתך זה.</div>`;
@@ -1609,6 +1991,265 @@ window.SelfieApp = (function () {
     a.click();
     URL.revokeObjectURL(url);
     showToast("קובץ המחקר המזווג (CSV מותאם ל-SPSS/Excel) הורד בהצלחה!");
+  }
+
+  function setRawSearchQuery(val) {
+    state.rawSearchQuery = val || "";
+    renderDashboardView();
+    const input = document.querySelector('input[placeholder*="חיפוש לפי שם משיב"]');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  function toggleInspectSubmission(subId) {
+    state.inspectedSubmissionId = state.inspectedSubmissionId === subId ? null : subId;
+    renderDashboardView();
+  }
+
+  async function toggleIncludeDemoData() {
+    state.includeDemoData = !state.includeDemoData;
+    rebuildEffectiveSubmissions();
+    saveStateToStorage();
+    renderDashboardView();
+    try {
+      await fetch(CLOUD_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_demo_mode",
+          includeDemo: state.includeDemoData
+        })
+      });
+    } catch (e) {}
+    showToast(
+      state.includeDemoData
+        ? "נתוני ההדגמה מוצגים כעת בדשבורד"
+        : `נתוני ההדגמה הוסתרו – מוצגים רק ${state.realSubmissions.length} שאלונים אמיתיים`
+    );
+  }
+
+  async function deleteSubmissionById(subId) {
+    if (!confirm("האם למחוק את השאלון הזה מהמאגר?")) return;
+    state.realSubmissions = state.realSubmissions.filter((s) => s.id !== subId);
+    if (state.inspectedSubmissionId === subId) state.inspectedSubmissionId = null;
+    rebuildEffectiveSubmissions();
+    saveStateToStorage();
+    renderDashboardView();
+    try {
+      const resp = await fetch(CLOUD_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_submission", id: subId })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && Array.isArray(data.submissions)) {
+          state.realSubmissions = data.submissions.filter((s) => !isDemoRecord(s));
+          rebuildEffectiveSubmissions();
+          saveStateToStorage();
+          renderDashboardView();
+        }
+      }
+    } catch (e) {}
+    showToast("השאלון נמחק בהצלחה");
+  }
+
+  async function clearAllRealSubmissions() {
+    if (
+      !confirm(
+        `האם אתה בטוח שברצונך למחוק את כל ${state.realSubmissions.length} השאלונים שנשלחו? (מומלץ להוריד קובץ גיבוי לפני איפוס)`
+      )
+    ) {
+      return;
+    }
+    state.realSubmissions = [];
+    state.inspectedSubmissionId = null;
+    rebuildEffectiveSubmissions();
+    saveStateToStorage();
+    renderDashboardView();
+    try {
+      await fetch(CLOUD_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear_all_submissions" })
+      });
+    } catch (e) {}
+    showToast("כל שאלוני הבדיקה אופסו מהענן");
+  }
+
+  function csvEscape(val) {
+    const str = String(val ?? "").replace(/"/g, '""');
+    return `"${str}"`;
+  }
+
+  function exportAllRawResponsesCsv() {
+    const config = window.SELFIE_CONFIG;
+    const levelByCode = {};
+    config.levels.forEach((lv) => {
+      levelByCode[lv.code] = lv;
+    });
+
+    const itemHeaders = [];
+    const itemRefs = [];
+    config.domains.forEach((dom, domIdx) => {
+      dom.items.forEach((item, itemIdx) => {
+        const qNum = 2 + domIdx * 3 + itemIdx;
+        itemHeaders.push(`שאלה_${qNum}_מלל (${item.titleHe})`, `שאלה_${qNum}_ציון`);
+        itemRefs.push({ qNum, id: item.id });
+      });
+    });
+
+    const headers = [
+      "סוג_שאלון",
+      "מזהה_שאלון",
+      "מזהה_משיב_מזווג",
+      "תאריך_מענה",
+      "שם_מלא",
+      "אימייל",
+      "תפקיד",
+      "חוג",
+      "קורס",
+      "פעימה",
+      "שאלה_1_הגדרה_עצמית_מלל",
+      "שאלה_1_ציון",
+      "ציון_כולל",
+      "רמה_כוללת",
+      "תחום_1_פדגוגיה",
+      "תחום_2_תוכן_ו-AI",
+      "תחום_3_הערכה",
+      "תחום_4_העצמת_לומדים",
+      "תחום_5_אוריינות_AI",
+      "תחום_6_הובלה_ארגונית",
+      ...itemHeaders
+    ];
+
+    const rows = state.cohortSubmissions.map((s) => {
+      const calc = window.SelfieScoringEngine.calculateSubmissionScores(s);
+      const deptName = config.departments.find((d) => d.id === s.department)?.nameHe || s.department;
+      const roleName = config.profiles[s.role]?.labelHe || s.role;
+      const pulseName = config.pulses.find((p) => p.id === s.pulse)?.nameHe || s.pulse;
+      const q1Lv = levelByCode[s.prePerception];
+
+      const itemCols = [];
+      itemRefs.forEach((ref) => {
+        const code = (s.responses && s.responses[ref.id]) || "";
+        const lv = levelByCode[code];
+        itemCols.push(csvEscape(lv ? lv.titleHe : ""), lv ? lv.normalizedScore : "");
+      });
+
+      const domScores = calc.domainResults.map((d) => d.score);
+
+      return [
+        csvEscape(isDemoRecord(s) ? "הדגמה" : "אמיתי"),
+        csvEscape(s.id || ""),
+        csvEscape(s.participantHash || ""),
+        csvEscape(s.timestamp || ""),
+        csvEscape(s.name || ""),
+        csvEscape(s.email || ""),
+        csvEscape(roleName),
+        csvEscape(deptName),
+        csvEscape(s.courseName || ""),
+        csvEscape(pulseName),
+        csvEscape(q1Lv ? q1Lv.titleHe : ""),
+        q1Lv ? q1Lv.normalizedScore : "",
+        calc.overallScore,
+        csvEscape(calc.overallLevel.titleHe),
+        domScores[0] ?? "",
+        domScores[1] ?? "",
+        domScores[2] ?? "",
+        domScores[3] ?? "",
+        domScores[4] ?? "",
+        domScores[5] ?? "",
+        ...itemCols
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [headers.map(csvEscape).join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const dateTag = new Date().toISOString().slice(0, 10);
+    a.download = `SELFIE_Oranim_All_Raw_Responses_Q1_to_Q19_${dateTag}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("קובץ אקסל (CSV) עם כל התשובות הגולמיות (שאלות 1–19) הורד בהצלחה!");
+  }
+
+  function exportBackupJson() {
+    const backupPayload = {
+      app: "SELFIE_ORANIM_PRIZMA",
+      version: "2.0",
+      exportedAt: new Date().toISOString(),
+      includeDemoData: state.includeDemoData,
+      realSubmissionsCount: state.realSubmissions.length,
+      realSubmissions: state.realSubmissions,
+      allDisplayedSubmissions: state.cohortSubmissions
+    };
+    const jsonStr = JSON.stringify(backupPayload, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const dateTag = new Date().toISOString().slice(0, 10);
+    a.download = `SELFIE_Oranim_Backup_${dateTag}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("קובץ הגיבוי המלא (JSON) הורד למחשב בהצלחה!");
+  }
+
+  function handleRestoreBackupFile(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const parsed = JSON.parse(String(e.target?.result || "{}"));
+        const incoming = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed.realSubmissions)
+          ? parsed.realSubmissions
+          : Array.isArray(parsed.submissions)
+          ? parsed.submissions
+          : null;
+        if (!incoming) {
+          showToast("קובץ הגיבוי אינו תקין");
+          return;
+        }
+        const cleanSubs = incoming.filter((s) => !isDemoRecord(s));
+        state.realSubmissions = cleanSubs;
+        rebuildEffectiveSubmissions();
+        saveStateToStorage();
+        renderDashboardView();
+
+        const resp = await fetch(CLOUD_API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "restore_backup",
+            mode: "merge",
+            submissions: cleanSubs
+          })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && Array.isArray(data.submissions)) {
+            state.realSubmissions = data.submissions.filter((s) => !isDemoRecord(s));
+            rebuildEffectiveSubmissions();
+            saveStateToStorage();
+            renderDashboardView();
+          }
+        }
+        showToast(`הגיבוי שוחזר בהצלחה (${state.realSubmissions.length} שאלונים סונכרנו לענן)`);
+      } catch (err) {
+        showToast("שגיאה בקריאת קובץ הגיבוי");
+      } finally {
+        event.target.value = "";
+      }
+    };
+    reader.readAsText(file);
   }
 
   // ===========================================================================
@@ -2068,6 +2709,15 @@ window.SelfieApp = (function () {
     setDashboardCohortView,
     copyAttritionReminder,
     exportPairedCsv,
+    exportAllRawResponsesCsv,
+    exportBackupJson,
+    handleRestoreBackupFile,
+    syncFromCloudIfNeeded,
+    toggleIncludeDemoData,
+    setRawSearchQuery,
+    toggleInspectSubmission,
+    deleteSubmissionById,
+    clearAllRealSubmissions,
     updateSimField,
     setSimAttrition
   };
