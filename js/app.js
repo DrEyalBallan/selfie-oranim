@@ -211,9 +211,12 @@ window.SelfieApp = (function () {
   }
 
   // Format bold markdown **text** to HTML
-  function formatBold(str) {
+  function formatBold(str, onDark) {
     if (!str) return "";
-    return String(str).replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-indigo-950 underline decoration-indigo-400 decoration-2 underline-offset-2">$1</strong>');
+    const colorClass = onDark
+      ? "font-extrabold text-white underline decoration-indigo-300 decoration-2 underline-offset-2"
+      : "font-bold text-indigo-950 underline decoration-indigo-400 decoration-2 underline-offset-2";
+    return String(str).replace(/\*\*(.+?)\*\*/g, `<strong class="${colorClass}">$1</strong>`);
   }
 
   function getMissingQuestionsInDomain(domIdx) {
@@ -966,10 +969,10 @@ window.SelfieApp = (function () {
             </button>
           </div>
 
-          <div id="syllabus-policy-card-text" class="space-y-2.5 pt-4 text-xs sm:text-sm text-slate-100 leading-relaxed">
+          <div id="syllabus-policy-card-text" class="space-y-2.5 pt-4 text-xs sm:text-sm text-white leading-relaxed">
             <div class="font-bold text-indigo-200">קורס: "${blueprint.courseName}" | ${blueprint.deptNameHe}</div>
             ${blueprint.policyRulesHe
-              .map((rule) => `<div class="p-3 rounded-xl bg-white/10 border border-white/10">${formatBold(rule)}</div>`)
+              .map((rule) => `<div class="p-3 rounded-xl bg-white/10 border border-white/10 text-white">${formatBold(rule, true)}</div>`)
               .join("")}
           </div>
         </div>
