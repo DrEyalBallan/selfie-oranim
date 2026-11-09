@@ -77,11 +77,10 @@ window.SelfieApp = (function () {
         state.cohortSubmissions = [...window.SELFIE_DEMO_COHORT];
       }
 
-      const savedDraft = localStorage.getItem(STORAGE_KEY_CURRENT);
-      if (savedDraft) {
-        const parsedDraft = JSON.parse(savedDraft);
-        state.currentDraft = { ...state.currentDraft, ...parsedDraft };
-      }
+      // איפוס טיוטה קודמת כך שבכל פתיחה מחדש של הקישור השאלון ייפתח ריק לחלוטין
+      localStorage.removeItem(STORAGE_KEY_CURRENT);
+      localStorage.removeItem("selfie2_current_draft_v1");
+      localStorage.removeItem("selfie2_current_draft_v2");
     } catch (e) {
       state.cohortSubmissions = [...window.SELFIE_DEMO_COHORT];
     }
@@ -90,7 +89,6 @@ window.SelfieApp = (function () {
   function saveStateToStorage() {
     try {
       localStorage.setItem(STORAGE_KEY_COHORT, JSON.stringify(state.cohortSubmissions));
-      localStorage.setItem(STORAGE_KEY_CURRENT, JSON.stringify(state.currentDraft));
     } catch (e) {
       console.warn("Storage save warning:", e);
     }
