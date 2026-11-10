@@ -53,15 +53,10 @@ window.SELFIE_CONFIG = {
   },
 
   departments: [
-    { id: "hebrew", nameHe: "החוג ללשון עברית (חוג עוגן)", nameEn: "Hebrew Language Dept.", lead: "ד״ר אושרי זיגלבוים", targetStaff: 18 },
     { id: "spec_ed", nameHe: "החוג לחינוך מיוחד", nameEn: "Special Education Dept.", lead: "ד״ר דנה ברק הראל ולילך יבין", targetStaff: 40 },
-    { id: "lit_drama", nameHe: "החוג לספרות, דרמה ומבע יצירתי", nameEn: "Literature, Drama & Creative Expression", lead: "ד״ר אריאל פרידן", targetStaff: 22 },
+    { id: "hebrew", nameHe: "החוג ללשון עברית", nameEn: "Hebrew Language Dept.", lead: "ד״ר אושרי זיגלבוים", targetStaff: 18 },
     { id: "media", nameHe: "החוג לתקשורת ולקולנוע חברתי", nameEn: "Communication & Social Cinema", lead: "ד״ר אוהד אופז וד״ר מיה מזור", targetStaff: 16 },
-    { id: "soc_comm", nameHe: "החוג לחינוך חברתי-קהילתי", nameEn: "Social-Community Education", lead: "צוות החח״ק", targetStaff: 20 },
-    { id: "english", nameHe: "החוג להוראת אנגלית", nameEn: "English Language Education", lead: "צוות אנגלית", targetStaff: 18 },
-    { id: "stem", nameHe: "החוג למדעים ומתמטיקה", nameEn: "Science & Mathematics Education", lead: "צוות מדעים", targetStaff: 24 },
-    { id: "field", nameHe: "מדור שדה והמד״פיות", nameEn: "Field Practicum & Pedagogical Mentors", lead: "צוות מדור שדה", targetStaff: 60 },
-    { id: "general", nameHe: "כלל-מכללתי / יחידות רוחב", nameEn: "College-Wide / Cross-Disciplinary", lead: "היחידה לקידום הוראה וחדשנות", targetStaff: 30 }
+    { id: "lit_drama", nameHe: "החוג לספרות, דרמה ומבע יצירתי", nameEn: "Literature, Drama & Creative Expression", lead: "ד״ר אריאל פרידן", targetStaff: 22 }
   ],
 
   pulses: [

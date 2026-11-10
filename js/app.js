@@ -30,11 +30,12 @@ window.SelfieApp = (function () {
     activeTab: "assessment",
     activeDomainIdx: 0,
     showValidationErrors: false,
+    highlightedMissingQNum: null,
     currentDraft: {
       name: "",
       email: "",
       role: "lecturer",
-      department: "general",
+      department: "spec_ed",
       courseName: "",
       pulse: "pre_2026",
       prePerception: "",
@@ -43,6 +44,18 @@ window.SelfieApp = (function () {
       artifactUrl: "",
       reflectionNotes: "",
       responses: {}
+    },
+    promptBuilder: {
+      goals: {
+        train_weaknesses: true,
+        general_ai_guide: false,
+        syllabus_ai: false,
+        lesson_plan_ai: false
+      },
+      guidanceStyle: "practical_step",
+      techLevel: "intermediate",
+      gender: "female",
+      customTopic: ""
     },
     aiOptions: {
       courseName: "",
@@ -219,6 +232,22 @@ window.SelfieApp = (function () {
     return String(str).replace(/\*\*(.+?)\*\*/g, `<strong class="${colorClass}">$1</strong>`);
   }
 
+  function isProfileMissing() {
+    const draft = state.currentDraft;
+    const nameOk = Boolean(draft.name && String(draft.name).trim().length >= 2);
+    const emailOk = Boolean(draft.email && String(draft.email).trim().includes("@"));
+    return !nameOk || !emailOk;
+  }
+
+  function scrollToProfileCard() {
+    setTimeout(() => {
+      const el = document.getElementById("profile-card-section");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 50);
+  }
+
   function getMissingQuestionsInDomain(domIdx) {
     const config = window.SELFIE_CONFIG;
     const draft = state.currentDraft;
@@ -247,25 +276,43 @@ window.SelfieApp = (function () {
   }
 
   function scrollToQuestionCard(qNum) {
+    state.highlightedMissingQNum = qNum;
     setTimeout(() => {
       const el = document.getElementById("q-card-" + qNum);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.remove("selfie-missing-focus");
+        void el.offsetWidth;
+        el.classList.add("selfie-missing-focus");
       }
-    }, 50);
+    }, 60);
   }
 
   function setTab(tabId) {
     if (tabId === "report" && window.SELFIE_APP_MODE !== "management") {
+      if (isProfileMissing()) {
+        state.activeTab = "assessment";
+        state.showValidationErrors = true;
+        renderHeaderNav();
+        renderActiveTab();
+        showToast("חובת מילוי פרטים אישיים: יש להזין שם מלא ואימייל מוסדי בראש הדף");
+        scrollToProfileCard();
+        return;
+      }
       const missing = getFirstMissingQuestionUpTo(window.SELFIE_CONFIG.domains.length - 1);
       if (missing) {
         state.activeTab = "assessment";
         state.activeDomainIdx = missing.domIdx;
         state.showValidationErrors = true;
+        state.highlightedMissingQNum = missing.qNum;
         renderHeaderNav();
         renderActiveTab();
         showToast(`חובת מענה: לא ניתן להפיק דוח לפני מענה על כל השאלות (חסרה שאלה ${missing.qNum})`);
         scrollToQuestionCard(missing.qNum);
+        return;
+      }
+      if (!state.hasSubmittedCurrentSession) {
+        submitCurrentReflection();
         return;
       }
     }
@@ -290,6 +337,7 @@ window.SelfieApp = (function () {
 
   function updateDraftField(field, value) {
     state.currentDraft[field] = value;
+    state.hasSubmittedCurrentSession = false;
     saveStateToStorage();
     const pidEl = document.getElementById("live-pid-badge");
     if (pidEl) {
@@ -301,12 +349,16 @@ window.SelfieApp = (function () {
 
   function selectPrePerception(levelCode) {
     state.currentDraft.prePerception = levelCode;
+    state.hasSubmittedCurrentSession = false;
+    if (state.highlightedMissingQNum === 1) state.highlightedMissingQNum = null;
     saveStateToStorage();
     renderAssessmentView();
   }
 
   function selectItemResponse(itemId, levelCode) {
     state.currentDraft.responses[itemId] = levelCode;
+    state.hasSubmittedCurrentSession = false;
+    state.highlightedMissingQNum = null;
     saveStateToStorage();
     renderAssessmentView();
     renderTopQuickStats();
@@ -351,17 +403,26 @@ window.SelfieApp = (function () {
   }
 
   function submitCurrentReflection() {
+    if (isProfileMissing()) {
+      state.showValidationErrors = true;
+      renderAssessmentView();
+      showToast("חובת מילוי פרטים אישיים: יש להזין שם מלא ואימייל מוסדי בראש הדף לפני שליחת השאלון.");
+      scrollToProfileCard();
+      return;
+    }
+
     const missing = getFirstMissingQuestionUpTo(window.SELFIE_CONFIG.domains.length - 1);
     if (missing) {
       state.activeDomainIdx = missing.domIdx;
       state.showValidationErrors = true;
       renderAssessmentView();
-      showToast(`חובת מענה: דילגת על שאלה ${missing.qNum}. יש להשלים את כל השאלות לפני שמירת השאלון.`);
+      showToast(`חובת מענה: דילגת על שאלה ${missing.qNum}. יש להשלים את כל השאלות לפני שליחת השאלון.`);
       scrollToQuestionCard(missing.qNum);
       return;
     }
 
     state.showValidationErrors = false;
+    state.hasSubmittedCurrentSession = true;
     const pid = window.SelfieScoringEngine.hashParticipantId(
       state.currentDraft.email || state.currentDraft.name
     );
@@ -399,8 +460,11 @@ window.SelfieApp = (function () {
     rebuildEffectiveSubmissions();
     saveStateToStorage();
     pushSubmissionToCloud(newRecord);
-    showToast("השאלון נשמר בהצלחה בענן!");
-    setTab("report");
+    showToast("השאלון נשלח ונשמר בהצלחה בענן!");
+    state.activeTab = "report";
+    renderHeaderNav();
+    renderActiveTab();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function showToast(msg) {
@@ -480,15 +544,26 @@ window.SelfieApp = (function () {
     const draft = state.currentDraft;
 
     const activeDom = config.domains[state.activeDomainIdx] || config.domains[0];
+    const nameMissingErr = state.showValidationErrors && (!draft.name || String(draft.name).trim().length < 2);
+    const emailMissingErr = state.showValidationErrors && (!draft.email || !String(draft.email).trim().includes("@"));
 
     main.innerHTML = `
       <div class="space-y-6">
         <!-- Profile Card -->
-        <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
+        <div id="profile-card-section" class="bg-white rounded-2xl border p-5 shadow-sm transition-colors ${
+          nameMissingErr || emailMissingErr ? "border-2 border-rose-500 bg-rose-50/30" : "border-slate-200/90"
+        }">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <h2 class="text-lg sm:text-xl font-black text-slate-900">
-              פרטי משיב/ה
-            </h2>
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg sm:text-xl font-black text-slate-900">
+                פרטי משיב/ה (חובה למילוי לצורך זיווג פעימות)
+              </h2>
+              ${
+                nameMissingErr || emailMissingErr
+                  ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">חובה להזין שם מלא ואימייל מוסדי תקין</span>`
+                  : ""
+              }
+            </div>
 
             <!-- Role Switcher Pills -->
             <div class="flex flex-wrap gap-2">
@@ -508,24 +583,28 @@ window.SelfieApp = (function () {
             </div>
           </div>
 
-          <!-- Form Fields -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 pt-4">
+          <!-- Form Fields (Without Course Selector, Fixed to Pulse 1) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-4">
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">שם מלא</label>
+              <label class="block text-xs font-bold ${nameMissingErr ? "text-rose-700" : "text-slate-700"} mb-1">שם מלא <span class="text-rose-600">*</span></label>
               <input type="text" value="${draft.name}" oninput="SelfieApp.updateDraftField('name', this.value)"
-                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
-                placeholder="הזן/י שם מלא" />
+                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border ${
+                  nameMissingErr ? "border-2 border-rose-500 bg-rose-50" : "border-slate-300"
+                } focus:border-indigo-500 focus:outline-none"
+                placeholder="הזן/י שם מלא (חובה)" />
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">אימייל מוסדי</label>
+              <label class="block text-xs font-bold ${emailMissingErr ? "text-rose-700" : "text-slate-700"} mb-1">אימייל מוסדי <span class="text-rose-600">*</span></label>
               <input type="email" value="${draft.email}" oninput="SelfieApp.updateDraftField('email', this.value)"
-                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
-                placeholder="אימייל מוסדי" />
+                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border ${
+                  emailMissingErr ? "border-2 border-rose-500 bg-rose-50" : "border-slate-300"
+                } focus:border-indigo-500 focus:outline-none"
+                placeholder="name@oranim.ac.il (חובה)" />
             </div>
 
             <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">חוג / יחידה אקדמית</label>
+              <label class="block text-xs font-bold text-slate-700 mb-1">חוג / יחידה אקדמית (מכללת אורנים)</label>
               <select onchange="SelfieApp.updateDraftField('department', this.value)"
                 class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none bg-white">
                 ${config.departments
@@ -539,22 +618,10 @@ window.SelfieApp = (function () {
 
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">פעימת מדידה</label>
-              <select onchange="SelfieApp.updateDraftField('pulse', this.value)"
-                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-indigo-300 bg-indigo-50/50 font-bold text-indigo-950 focus:outline-none">
-                ${config.pulses
-                  .map(
-                    (p) =>
-                      `<option value="${p.id}" ${draft.pulse === p.id ? "selected" : ""}>${p.nameHe}</option>`
-                  )
-                  .join("")}
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">קורס / מקצוע מרכזי</label>
-              <input type="text" value="${draft.courseName}" oninput="SelfieApp.updateDraftField('courseName', this.value)"
-                class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:border-indigo-500 focus:outline-none"
-                placeholder="שם הקורס" />
+              <div class="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-indigo-300 bg-indigo-50/70 font-bold text-indigo-950 flex items-center justify-between">
+                <span>פעימה א׳ – תחילת שנה</span>
+                <span class="text-[11px] bg-indigo-600 text-white px-2 py-0.5 rounded-md font-black">פעיל</span>
+              </div>
             </div>
           </div>
         </div>
@@ -617,12 +684,21 @@ window.SelfieApp = (function () {
               state.activeDomainIdx === 0
                 ? (() => {
                     const q1Unanswered = state.showValidationErrors && !draft.prePerception;
+                    const q1IsFocused = state.highlightedMissingQNum === 1;
+                    const q1IsNa = draft.prePerception === "NA";
                     return `
-                      <div id="q-card-1" class="p-5 sm:p-6 transition-colors ${
+                      <div id="q-card-1" class="p-5 sm:p-6 transition-all ${
                         q1Unanswered
-                          ? "bg-rose-50/60 border-r-4 border-rose-500"
+                          ? "bg-rose-50/95 border-4 border-rose-600 ring-4 ring-rose-200 rounded-2xl m-3 shadow-xl " + (q1IsFocused ? "selfie-missing-focus" : "")
                           : "hover:bg-slate-50/50"
                       }">
+                        ${
+                          q1Unanswered
+                            ? `<div class="mb-3 px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-black flex items-center gap-2 shadow-sm">
+                                <span>⚠️ שאלה 1 לא נענתה! יש לבחור את אחת האפשרויות למטה (או לסמן "לא רלוונטי") כדי להמשיך.</span>
+                              </div>`
+                            : ""
+                        }
                         <div class="mb-3">
                           <div class="flex flex-wrap items-center gap-2 mb-1">
                             <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white" style="background:${activeDom.color}">
@@ -631,16 +707,11 @@ window.SelfieApp = (function () {
                             <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
                               איך את/ה מגדיר/ה את עצמך בשילוב טכנולוגיה ובינה מלאכותית בהוראה?
                             </h4>
-                            ${
-                              q1Unanswered
-                                ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">חובה לענות על שאלה זו</span>`
-                                : ""
-                            }
                           </div>
                           <p class="text-xs sm:text-sm text-slate-600 mt-1">בחר/י את ההגדרה שמשקפת באופן הקרוב ביותר את נקודת הפתיחה הנוכחית שלך:</p>
                         </div>
 
-                        <!-- 6 Progression Statements Grid for Question 1 -->
+                        <!-- 6 Progression Statements + Not Relevant (NA) Grid for Question 1 -->
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3">
                           ${config.levels
                             .map((lv) => {
@@ -657,7 +728,7 @@ window.SelfieApp = (function () {
                                       <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
                                         ${lv.titleHe}
                                       </span>
-                                      ${isChosen ? `<span class="text-xs font-bold text-indigo-700">נבחר</span>` : ""}
+                                      ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✓ נבחר</span>` : ""}
                                     </div>
                                     <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
                                       ${lv.descHe}
@@ -667,6 +738,26 @@ window.SelfieApp = (function () {
                               `;
                             })
                             .join("")}
+
+                          <!-- Option 7: Not Applicable (לא רלוונטי) -->
+                          <div onclick="SelfieApp.selectPrePerception('NA')"
+                            class="cursor-pointer rounded-xl p-3.5 border-2 transition-all flex flex-col justify-between md:col-span-2 lg:col-span-3 ${
+                              q1IsNa
+                                ? "bg-slate-100 border-slate-600 shadow-md scale-[1.005]"
+                                : "bg-slate-50/80 border-slate-200/90 hover:border-slate-400 hover:bg-slate-100/70"
+                            }">
+                            <div class="flex items-center justify-between gap-2">
+                              <div class="flex items-center gap-2.5">
+                                <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white bg-slate-600">
+                                  לא רלוונטי
+                                </span>
+                                <span class="text-xs sm:text-[13px] text-slate-700 font-medium">
+                                  שאלה זו אינה רלוונטית לתפקידי או למסגרת ההוראה הנוכחית שלי
+                                </span>
+                              </div>
+                              ${q1IsNa ? `<span class="text-xs font-black text-slate-800">✓ נבחר</span>` : ""}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     `;
@@ -679,15 +770,24 @@ window.SelfieApp = (function () {
                 const questionNum = 2 + state.activeDomainIdx * 3 + itemIdx;
                 const selectedCode = draft.responses[item.id] || "";
                 const isUnansweredError = state.showValidationErrors && !selectedCode;
+                const isFocusedMissing = state.highlightedMissingQNum === questionNum;
+                const isNaChosen = selectedCode === "NA";
                 const introText = item.introHe[draft.role] || item.introHe.lecturer;
                 const statements = item.statementsHe;
 
                 return `
-                  <div id="q-card-${questionNum}" class="p-5 sm:p-6 transition-colors ${
+                  <div id="q-card-${questionNum}" class="p-5 sm:p-6 transition-all ${
                     isUnansweredError
-                      ? "bg-rose-50/60 border-r-4 border-rose-500"
+                      ? "bg-rose-50/95 border-4 border-rose-600 ring-4 ring-rose-200 rounded-2xl m-3 shadow-xl " + (isFocusedMissing ? "selfie-missing-focus" : "")
                       : "hover:bg-slate-50/50"
                   }">
+                    ${
+                      isUnansweredError
+                        ? `<div class="mb-3 px-3.5 py-2 rounded-xl bg-rose-600 text-white text-xs sm:text-sm font-black flex items-center gap-2 shadow-sm">
+                            <span>⚠️ שאלה ${questionNum} לא נענתה! יש לבחור את אחת האפשרויות למטה (או לסמן "לא רלוונטי") כדי להמשיך.</span>
+                          </div>`
+                        : ""
+                    }
                     <div class="mb-3">
                       <div class="flex flex-wrap items-center gap-2 mb-1">
                         <span class="inline-block px-2.5 py-0.5 rounded-md text-xs font-black text-white" style="background:${activeDom.color}">
@@ -696,16 +796,11 @@ window.SelfieApp = (function () {
                         <h4 class="inline text-base sm:text-lg font-extrabold text-slate-900">
                           ${item.titleHe}
                         </h4>
-                        ${
-                          isUnansweredError
-                            ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-700 border border-rose-300">חובה לענות על שאלה זו</span>`
-                            : ""
-                        }
                       </div>
                       <p class="text-xs sm:text-sm text-slate-600 mt-1">${introText}</p>
                     </div>
 
-                    <!-- 6 Progression Statements Grid -->
+                    <!-- 6 Progression Statements + Not Relevant (NA) Grid -->
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3">
                       ${config.levels
                         .map((lv) => {
@@ -723,7 +818,7 @@ window.SelfieApp = (function () {
                                   <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white" style="background:${lv.color}">
                                     ${lv.titleHe}
                                   </span>
-                                  ${isChosen ? `<span class="text-xs font-bold text-indigo-700">נבחר</span>` : ""}
+                                  ${isChosen ? `<span class="text-xs font-bold text-indigo-700">✓ נבחר</span>` : ""}
                                 </div>
                                 <p class="text-xs sm:text-[13px] text-slate-800 leading-relaxed">
                                   ${formatBold(stText)}
@@ -733,6 +828,26 @@ window.SelfieApp = (function () {
                           `;
                         })
                         .join("")}
+
+                      <!-- Option 7: Not Applicable (לא רלוונטי) -->
+                      <div onclick="SelfieApp.selectItemResponse('${item.id}', 'NA')"
+                        class="cursor-pointer rounded-xl p-3.5 border-2 transition-all flex flex-col justify-between md:col-span-2 lg:col-span-3 ${
+                          isNaChosen
+                            ? "bg-slate-100 border-slate-600 shadow-md scale-[1.005]"
+                            : "bg-slate-50/80 border-slate-200/90 hover:border-slate-400 hover:bg-slate-100/70"
+                        }">
+                        <div class="flex items-center justify-between gap-2">
+                          <div class="flex items-center gap-2.5">
+                            <span class="px-2.5 py-0.5 rounded-lg text-xs font-black text-white bg-slate-600">
+                              לא רלוונטי
+                            </span>
+                            <span class="text-xs sm:text-[13px] text-slate-700 font-medium">
+                              היגד זה אינו רלוונטי לתפקידי או למסגרת ההוראה שלי
+                            </span>
+                          </div>
+                          ${isNaChosen ? `<span class="text-xs font-black text-slate-800">✓ נבחר</span>` : ""}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 `;
@@ -761,8 +876,8 @@ window.SelfieApp = (function () {
                       המשך לתחום ${state.activeDomainIdx + 2} מתוך 6 ←
                     </button>`
                   : `<button onclick="SelfieApp.submitCurrentReflection()"
-                      class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-black shadow-lg shadow-indigo-500/25">
-                      <span>שמור שאלון והפק דוח אישי</span>
+                      class="px-7 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm sm:text-base font-black shadow-lg shadow-emerald-500/25">
+                      <span>שלח שאלון וצפה בדוח האישי ✓</span>
                     </button>`
               }
             </div>
@@ -774,10 +889,18 @@ window.SelfieApp = (function () {
 
   function setDomainIdx(idx) {
     if (idx > state.activeDomainIdx) {
+      if (isProfileMissing()) {
+        state.showValidationErrors = true;
+        renderAssessmentView();
+        showToast("חובת מילוי פרטים אישיים: יש להזין שם מלא ואימייל מוסדי בראש הדף לפני מעבר לעמוד הבא");
+        scrollToProfileCard();
+        return;
+      }
       const missing = getFirstMissingQuestionUpTo(idx - 1);
       if (missing) {
         state.activeDomainIdx = missing.domIdx;
         state.showValidationErrors = true;
+        state.highlightedMissingQNum = missing.qNum;
         renderAssessmentView();
         showToast(`חובת מענה: לא ניתן להמשיך לעמוד הבא – דילגת על שאלה ${missing.qNum}`);
         scrollToQuestionCard(missing.qNum);
@@ -785,24 +908,256 @@ window.SelfieApp = (function () {
       }
     }
     state.showValidationErrors = false;
+    state.highlightedMissingQNum = null;
     state.activeDomainIdx = idx;
     renderAssessmentView();
-    const qEl = document.getElementById("questions-section-top");
-    if (qEl) {
-      qEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const PB_GUIDANCE_STYLES = {
+    practical_step: {
+      id: "practical_step",
+      label: "🛠️ מורה דרך מעשי וממקד (Step-by-Step)",
+      desc: "רגוע, בהיר, מפרק כל מיומנות לצעדים קטנים, פשוטים וישימים מיד בהוראה",
+      promptText:
+        "אמץ סגנון של מנטור מעשי, מרגיע וממקד (Step-by-Step): פרק עבורי כל עיקרון או כלי בינה מלאכותית לצעדים קטנים, פשוטים וברורים שאוכל ליישם מיד ובביטחון מלא."
+    },
+    second_attention: {
+      id: "second_attention",
+      label: "👁️ מנטור ״הקשב השני״ (סקרנות והשקטת שיפוטיות)",
+      desc: "השקטת חששות ושיפוטיות, התבוננות משחקית וחיבור לעוצמה הפדגוגית שלך",
+      promptText:
+        "אמץ סגנון הנחיה ברוח פדגוגיית 'הקשב השני': עזור לי להשקיט חששות או שיפוטיות עצמית מול טכנולוגיה ו-AI, עודד אותי להתבוננות סקרנית ומשחקית, ושאל שאלות שמחברות אותי לעוצמה הפדגוגית והאנושית שלי."
+    },
+    emotional_legitimacy: {
+      id: "emotional_legitimacy",
+      label: "❤️ מלווה תומך, אמפתי ונותן ביטחון",
+      desc: "חם, עוטף, מעניק תחושת מסוגלות מלאה בקצב נינוח וללא הצפה",
+      promptText:
+        "אמץ סגנון הנחיה חם, אמפתי, רגיש ומעצים: תן לי תחושת ביטחון ומסוגלות מלאה, התקדם איתי בקצב רגוע וללא הצפה של מידע, וחזק בי את הידיעה שהניסיון החינוכי שלי הוא הלב של ההוראה."
+    },
+    creative_spark: {
+      id: "creative_spark",
+      label: "⚡ סיעור מוחות יצירתי ופורץ גבולות",
+      desc: "אנרגטי, מפתיע, מציע רעיונות מקוריים וחיבורים פדגוגיים חדשים",
+      promptText:
+        "אמץ סגנון של מנטור קריאייטיב פדגוגי מלא השראה והתלהבות: עודד אותי לחשוב מחוץ לקופסה, להשתמש בכלי בינה מלאכותית ליצירת חוויות למידה מפתיעות, סימולציות ומטאפורות שמציתות סקרנות אצל הלומדים."
+    },
+    socratic_academic: {
+      id: "socratic_academic",
+      label: "🎓 יועץ אקדמי-פדגוגי סוקרטי",
+      desc: "מוביל בשאלות עומק פדגוגיות, מדגיש חשיבה ביקורתית וסוכנות אנושית",
+      promptText:
+        "אמץ סגנון של יועץ אקדמי-פדגוגי סוקרטי: הובל אותי באמצעות שאלות עומק פדגוגיות, הדגש חשיבה ביקורתית, סוכנות אנושית (Human Agency), אתיקה ואימות קפדני של מקורות אקדמיים."
+    }
+  };
+
+  const PB_TECH_LEVELS = {
+    beginner: {
+      id: "beginner",
+      label: "🐣 מתחיל/ה – צעד אחר צעד בפשטות",
+      promptText:
+        "מבחינה טכנולוגית אני מעדיפ/ה הדרכה מהבסיס: הסבר לי בשפה פשוטה, נגישה ונטולת ז׳רגון טכני מסובך, איפה לוחצים, איזה פרומפט בדיוק להעתיק ואיך לבצע כל שלב צעד-אחר-צעד."
+    },
+    intermediate: {
+      id: "intermediate",
+      label: "🧭 בסיסי/בינוני – כיוון ברור וטיפים חכמים",
+      promptText:
+        "מבחינה טכנולוגית יש לי אוריינטציה טובה: תן לי כיוון ברור, תבניות פרומפטים חכמות וטיפים יישומיים שישדרגו את העבודה הפדגוגית שלי במהירות."
+    },
+    advanced: {
+      id: "advanced",
+      label: "🚀 מתקדם/ת – רוצה לעוף רחוק ולאתגר",
+      promptText:
+        "מבחינה טכנולוגית אני מרגיש/ה בנוח מאוד עם כלי AI: אתגר אותי בשילובים מתקדמים, בניית סוכנים/בוטים פדגוגיים, אוטומציה של משוב ועיצוב מטלות דו-נתיביות ברמה גבוהה."
+    }
+  };
+
+  function generatePersonalAiPromptText(calc) {
+    const config = window.SELFIE_CONFIG;
+    const draft = state.currentDraft;
+    const pb = state.promptBuilder;
+    const g = pb.gender || "female";
+    const gTxt = (fem, masc, neut) => (g === "male" ? masc : g === "neutral" ? neut : fem);
+
+    const roleObj = config.profiles[draft.role] || config.profiles.lecturer;
+    const deptObj = config.departments.find((d) => d.id === draft.department) || config.departments[0];
+    const styleObj = PB_GUIDANCE_STYLES[pb.guidanceStyle] || PB_GUIDANCE_STYLES.practical_step;
+    const techObj = PB_TECH_LEVELS[pb.techLevel] || PB_TECH_LEVELS.intermediate;
+
+    const nameIntro = draft.name && draft.name.trim() ? `שלום! קוראים לי ${draft.name.trim()}, ואני ` : "שלום! אני ";
+    const topicLine =
+      pb.customTopic && pb.customTopic.trim()
+        ? `\n- **הקורס / השיעור / תחום הדעת שעליו אני ${gTxt("רוצה", "רוצה", "רוצה")} לעבוד כעת:** "${pb.customTopic.trim()}"`
+        : "";
+
+    const weaknessesList = calc.priorityGrowthItems
+      .map(
+        (it, idx) =>
+          `  ${idx + 1}. **${it.itemTitleHe}** (תחום: ${it.domainShortHe} | כעת ברמת "${it.levelTitleHe}" ← יעד קידום לרמת "${it.nextLevelTitleHe}"):\n     - המלצת המערכת ליישום: ${it.levelUpTipHe}`
+      )
+      .join("\n");
+
+    const selectedGoals = [];
+    if (pb.goals.train_weaknesses) {
+      selectedGoals.push(
+        `🎯 **מטרה א׳ – אימון ממוקד בחולשות שנגלו בשאלון הסלפי שלי:** אמן והדרך אותי באופן מעשי ואישי כיצד לחזק את 3 נקודות הצמיחה שהתגלו בשאלון הסלפי שלי (המפורטות למטה), ולהעלות אותן שלב אחד למעלה בפרקטיקת ההוראה שלי.`
+      );
+    }
+    if (pb.goals.general_ai_guide) {
+      selectedGoals.push(
+        `🤖 **מטרה ב׳ – הדרכת AI כללית והכרת כלי בינה מלאכותית להוראה:** ערוך לי היכרות מעשית ומותאמת אישית עם כלי הבינה המלאכותית הרלוונטיים ביותר לתפקידי (${roleObj.labelHe}), למד אותי איך לנסח פרומפטים מדויקים, איך לבקר תוצרי AI ואיך לחסוך זמן בעבודה השוטפת.`
+      );
+    }
+    if (pb.goals.syllabus_ai) {
+      selectedGoals.push(
+        `📄 **מטרה ג׳ – הכנת או שדרוג סילבוס באמצעות כלי בינה מלאכותית:** לווה אותי צעד-אחר-צעד בבניית או בשדרוג סילבוס אקדמי עדכני באמצעות כלי בינה מלאכותית, כולל ניסוח מטרות למידה, שילוב 'מודל הנתיב הכפול' (נתיב מוגן ללא AI + נתיב משלב AI מבוקר), כרטיס מדיניות AI לסילבוס ומטלת הערכה מותאמת.`
+      );
+    }
+    if (pb.goals.lesson_plan_ai) {
+      selectedGoals.push(
+        `📚 **מטרה ד׳ – הכנת מערך שיעור / יחידת הוראה באמצעות כלי בינה מלאכותית:** עזור לי לתכנן ולבנות מערך שיעור שלם, יצירתי ופעיל באמצעות כלי AI – כולל פתיח מעורר מחשבה, הקניה ממוקדת, פעילות כיתתית שמפתחת חשיבה ביקורתית וסוכנות אנושית אצל ה${roleObj.learnerTermHe}, וכלי הערכה/רפלקציה קצר.`
+      );
+    }
+
+    if (selectedGoals.length === 0) {
+      selectedGoals.push(
+        `🎯 **אימון אישי מותאם לפרופיל הסלפי שלי:** לווה אותי בחיזוק נקודות הצמיחה שעלו בשאלון הסלפי שלי וביישום כלי בינה מלאכותית בהוראה.`
+      );
+    }
+
+    const genderInstruction = gTxt(
+      "פנה אליי בלשון נקבה",
+      "פנה אליי בלשון זכר",
+      "פנה אליי בלשון שוויונית ונגישה"
+    );
+
+    return `${nameIntro}${roleObj.labelHe} ב**${deptObj.nameHe}** במכללת אורנים (תוכנית פריזמה).
+סיימתי כעת למלא את שאלון המיפוי והרפלקציה הטכנו-פדגוגית ובינה מלאכותית (**SELFIE 2.0**), ואני ${gTxt("מבקשת", "מבקש", "מבקש/ת")} שתפעל כ**מאמן ומנטור אישי להוראה ובינה מלאכותית** שמותאם בדיוק לפרופיל שלי!
+
+📊 **נתוני פרופיל הסלפי שלי (נקודת הפתיחה שלי לאימון):**
+- **ציון כולל ורמת כשירות נוכחית:** ${calc.overallLevel.titleHe} (${calc.overallScore}%)${topicLine}
+- **חלוקת הציונים שלי לפי 6 התחומים:**
+${calc.domainResults.map((d) => `  • ${d.num}. ${d.titleHe}: ${d.score}% (${d.level.titleHe})`).join("\n")}
+
+🔍 **3 נקודות החולשה / הצמיחה המרכזיות שהתגלו בסלפי שלי (שעליהן חשוב לי להתאמן):**
+${weaknessesList}
+
+🚀 **מטרות האימון והפיתוח שבחרתי לעבוד עליהן איתך כעת (באמצעות כלי בינה מלאכותית):**
+${selectedGoals.join("\n")}
+
+🧭 **סגנון ההדרכה והליווי שאני ${gTxt("מבקשת", "מבקש", "מבקש/ת")} ממך:**
+- ${styleObj.promptText}
+- ${techObj.promptText}
+- **חוק שיחה מחייב (אינטראקטיבי ומדורג):** אל תציף אותי בטקסט ארוך או בהרצאה! נהל איתי דיאלוג חי, בגובה העיניים – **שאל אותי שאלה אחת בלבד בכל פעם**, המתן לתשובה שלי, והובל אותי צעד-אחר-צעד לתרגול מעשי וליצירת התוצרים (${genderInstruction}).
+
+📋 **איך נתחיל עכשיו (שלב 1 של השיחה שלנו):**
+1. פתח בברכה קצרה ומעצימה שמלמדת שקראת את פרופיל הסלפי שלי ב${deptObj.nameHe}.
+2. הצג לי במשפט קצר את נקודות הצמיחה שלי ואת המטרות שבחרתי למעלה, ושאל אותי **שאלה ראשונה ממוקדת ופשוטה**: מאיזו מטרה או נקודת חולשה מתוך הרשימה ${gTxt("תרצי", "תרצה", "תרצה/י")} שנתחיל את האימון המעשי שלנו עכשיו, ועל איזה שיעור או נושא קרוב שלך ${gTxt("נרצה", "נרצה", "נרצה")} להלביש זאת?`;
+  }
+
+  function togglePromptGoal(goalKey) {
+    state.promptBuilder.goals[goalKey] = !state.promptBuilder.goals[goalKey];
+    renderReportView();
+  }
+
+  function setPromptGuidanceStyle(styleId) {
+    state.promptBuilder.guidanceStyle = styleId;
+    renderReportView();
+  }
+
+  function setPromptTechLevel(levelId) {
+    state.promptBuilder.techLevel = levelId;
+    renderReportView();
+  }
+
+  function setPromptGender(genderId) {
+    state.promptBuilder.gender = genderId;
+    renderReportView();
+  }
+
+  function updatePromptCustomTopic(val) {
+    state.promptBuilder.customTopic = val;
+    const out = document.getElementById("selfie-pb-output-textarea");
+    if (out) {
+      const calc = window.SelfieScoringEngine.calculateSubmissionScores(state.currentDraft);
+      out.value = generatePersonalAiPromptText(calc);
     }
   }
 
+  function copyPersonalAiPrompt(callback) {
+    const calc = window.SelfieScoringEngine.calculateSubmissionScores(state.currentDraft);
+    const text = generatePersonalAiPromptText(calc);
+    const out = document.getElementById("selfie-pb-output-textarea");
+    if (out) out.value = text;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast("הפרומפט האישי הועתק ללוח! הדביקו אותו (Ctrl+V) בצ׳אט ה-AI שלכם ✅");
+      const btnText = document.getElementById("selfie-pb-copy-btn-text");
+      if (btnText) {
+        const orig = btnText.textContent;
+        btnText.textContent = "הפרומפט הועתק ללוח! הדביקו בצ׳אט (Ctrl+V) ✅";
+        setTimeout(() => {
+          btnText.textContent = orig;
+        }, 2800);
+      }
+      if (typeof callback === "function") callback();
+    });
+  }
+
+  function copyAndLaunchPersonalAi(url) {
+    copyPersonalAiPrompt(() => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+  }
+
   // ===========================================================================
-  // TAB 2: PERSONAL REPORT (SCORE BREAKDOWN IN RED-YELLOW-GREEN + 3 TIPS)
+  // TAB 2: PERSONAL REPORT (SCORE BREAKDOWN IN RED-YELLOW-GREEN + 3 TIPS + PROMPT BUILDER)
   // ===========================================================================
   function renderReportView() {
     const main = document.getElementById("main-view-container");
     const calc = window.SelfieScoringEngine.calculateSubmissionScores(state.currentDraft);
     const overallColor = getTrafficLightColor(calc.overallScore);
+    const pb = state.promptBuilder;
+    const generatedPrompt = generatePersonalAiPromptText(calc);
+
+    const goalCards = [
+      {
+        key: "train_weaknesses",
+        icon: "🎯",
+        title: "אימון החולשות שנגלו בסלפי שלי",
+        desc: "תרגול מעשי ומונחה לחיזוק 3 נקודות הצמיחה הספציפיות שהתגלו בשאלון"
+      },
+      {
+        key: "general_ai_guide",
+        icon: "🤖",
+        title: "הדרכת AI כללית והכרת כלי בינה",
+        desc: "היכרות מעשית עם כלי בינה מלאכותית להוראה, ניסוח פרומפטים ועבודה חכמה"
+      },
+      {
+        key: "syllabus_ai",
+        icon: "📄",
+        title: "הכנת סילבוס באמצעות כלי בינה",
+        desc: "בנייה או שדרוג של סילבוס אקדמי, כרטיס מדיניות AI ו׳הנתיב הכפול׳"
+      },
+      {
+        key: "lesson_plan_ai",
+        icon: "📚",
+        title: "הכנת מערך שיעור באמצעות כלי בינה",
+        desc: "תכנון מערך שיעור שלם, פתיח, פעילות כיתתית והערכה בסיוע AI"
+      }
+    ];
 
     main.innerHTML = `
       <div class="space-y-6">
+        ${
+          state.hasSubmittedCurrentSession
+            ? `<div class="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-4 flex items-center justify-between gap-3 text-emerald-950 shadow-xs">
+                <div class="text-xs sm:text-sm font-black">
+                  ✓ השאלון של ${state.currentDraft.name || "המשיב/ה"} נשלח ונקלט במערכת בהצלחה! להלן סיכום הציונים, 3 ההמלצות הממוקדות ומחולל הפרומפט האישי לאימון.
+                </div>
+              </div>`
+            : ""
+        }
         <!-- Overall Score + 6-Domain Score Breakdown (Red-Yellow-Green) -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
           <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-200">
@@ -864,7 +1219,7 @@ window.SelfieApp = (function () {
 
         <!-- Top 3 Priority Growth Recommendations -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm">
-          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-4">3 הצעות ממוקדות לשיפור</h3>
+          <h3 class="text-base sm:text-lg font-black text-slate-900 mb-4">3 הצעות ממוקדות לשיפור (נקודות הצמיחה שלך)</h3>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${calc.priorityGrowthItems
@@ -891,6 +1246,192 @@ window.SelfieApp = (function () {
                 `;
               })
               .join("")}
+          </div>
+        </div>
+
+        <!-- Personal AI Coach & Prompt Builder (Technopedagogy Style) -->
+        <div class="rounded-3xl border-2 border-indigo-500/40 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-6 sm:p-8 shadow-2xl">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-white/15">
+            <div>
+              <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/15 border border-amber-400/40 text-amber-300 text-xs font-black mb-2">
+                <span>✨ מחולל פרומפט אישי להעתקה (מותאם לפרופיל הסלפי שלך)</span>
+              </div>
+              <h3 class="text-xl sm:text-2xl font-black text-white">
+                צ׳אט מאמן AI אישי: אימון החולשות שנגלו בסלפי, הדרכת AI, הכנת סילבוס ומערך שיעור
+              </h3>
+              <p class="text-xs sm:text-sm text-slate-300 mt-1">
+                בחרו מה תרצו לתרגל או ליצור ובאיזה סגנון הדרכה – הפרומפט האישי מתעדכן אוטומטית עם תוצאות הסלפי שלכם ומוכן להעתקה ל-Gemini, ChatGPT או Claude.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-6">
+            <!-- Right Column: Interactive Customization Controls (7 cols) -->
+            <div class="lg:col-span-7 space-y-5">
+              <!-- Step 1: Select AI Training / Creation Goals (Multi-Select) -->
+              <div class="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                  <div class="text-sm sm:text-base font-black text-amber-300">
+                    1️⃣ מה תרצו לעשות ולתרגל באמצעות כלי הבינה המלאכותית?
+                  </div>
+                  <span class="text-[11px] text-slate-300">ניתן לבחור מספר מטרות יחד</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  ${goalCards
+                    .map((gCard) => {
+                      const active = Boolean(pb.goals[gCard.key]);
+                      return `
+                        <button type="button" onclick="SelfieApp.togglePromptGoal('${gCard.key}')"
+                          class="text-right p-3.5 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                            active
+                              ? "bg-amber-400/15 border-amber-400 text-white shadow-md"
+                              : "bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/30 hover:bg-white/5"
+                          }">
+                          <div>
+                            <div class="flex items-center justify-between gap-2 mb-1">
+                              <span class="text-xs sm:text-sm font-black ${active ? "text-amber-300" : "text-white"}">
+                                ${gCard.icon} ${gCard.title}
+                              </span>
+                              <span class="text-[11px] font-black px-2 py-0.5 rounded-full ${
+                                active ? "bg-amber-400 text-slate-950" : "bg-white/10 text-slate-400"
+                              }">${active ? "✓ פעיל" : "+ הוסף"}</span>
+                            </div>
+                            <p class="text-[11px] sm:text-xs text-slate-300 leading-relaxed">${gCard.desc}</p>
+                          </div>
+                        </button>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              </div>
+
+              <!-- Step 2: Guidance Style (Technopedagogy Styles) -->
+              <div class="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5">
+                <div class="text-sm sm:text-base font-black text-amber-300 mb-3">
+                  2️⃣ בחרו את סגנון ההדרכה והליווי של ה-AI:
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  ${Object.values(PB_GUIDANCE_STYLES)
+                    .map((st) => {
+                      const active = pb.guidanceStyle === st.id;
+                      return `
+                        <button type="button" onclick="SelfieApp.setPromptGuidanceStyle('${st.id}')"
+                          class="text-right p-3 rounded-xl border-2 transition-all ${
+                            active
+                              ? "bg-indigo-500/25 border-indigo-400 text-white shadow-md"
+                              : "bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/30 hover:bg-white/5"
+                          }">
+                          <div class="text-xs sm:text-sm font-black ${active ? "text-indigo-200" : "text-white"}">${st.label}</div>
+                          <div class="text-[11px] text-slate-300 mt-1 leading-snug">${st.desc}</div>
+                        </button>
+                      `;
+                    })
+                    .join("")}
+                </div>
+              </div>
+
+              <!-- Step 3: Tech Pacing, Gender & Optional Course/Lesson Topic -->
+              <div class="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-4">
+                <div class="text-sm sm:text-base font-black text-amber-300">
+                  3️⃣ רמת ליווי טכנולוגי והתאמה אישית:
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  ${Object.values(PB_TECH_LEVELS)
+                    .map((tl) => {
+                      const active = pb.techLevel === tl.id;
+                      return `
+                        <button type="button" onclick="SelfieApp.setPromptTechLevel('${tl.id}')"
+                          class="px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all text-center ${
+                            active
+                              ? "bg-indigo-500/25 border-indigo-400 text-white"
+                              : "bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/30"
+                          }">
+                          ${tl.label}
+                        </button>
+                      `;
+                    })
+                    .join("")}
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-300 mb-1.5">לשון פנייה בצ׳אט:</label>
+                    <div class="grid grid-cols-3 gap-1.5">
+                      <button type="button" onclick="SelfieApp.setPromptGender('female')"
+                        class="py-2 rounded-lg text-xs font-bold border ${
+                          pb.gender === "female"
+                            ? "bg-amber-400 text-slate-950 border-amber-300"
+                            : "bg-slate-900 text-slate-300 border-white/15"
+                        }">נקבה</button>
+                      <button type="button" onclick="SelfieApp.setPromptGender('male')"
+                        class="py-2 rounded-lg text-xs font-bold border ${
+                          pb.gender === "male"
+                            ? "bg-amber-400 text-slate-950 border-amber-300"
+                            : "bg-slate-900 text-slate-300 border-white/15"
+                        }">זכר</button>
+                      <button type="button" onclick="SelfieApp.setPromptGender('neutral')"
+                        class="py-2 rounded-lg text-xs font-bold border ${
+                          pb.gender === "neutral"
+                            ? "bg-amber-400 text-slate-950 border-amber-300"
+                            : "bg-slate-900 text-slate-300 border-white/15"
+                        }">ניטרלי</button>
+                    </div>
+                  </div>
+
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-bold text-slate-300 mb-1.5">
+                      נושא הקורס / השיעור / תחום הדעת לתרגול (אופציונלי):
+                    </label>
+                    <input type="text" value="${pb.customTopic || ""}"
+                      oninput="SelfieApp.updatePromptCustomTopic(this.value)"
+                      placeholder="למשל: הוראת שפה, חינוך מיוחד, סמינריון, מבוא לפסיכולוגיה..."
+                      class="w-full px-3.5 py-2 rounded-xl bg-slate-900/90 border border-white/20 text-white text-xs sm:text-sm focus:border-amber-400 focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Left Column: Live Prompt Output & One-Click Launchers (5 cols) -->
+            <div class="lg:col-span-5 flex flex-col justify-between bg-slate-900/95 border border-amber-400/30 rounded-2xl p-4 sm:p-5 space-y-3.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm sm:text-base font-black text-amber-300">
+                  📋 הפרומפט האישי המוכן להעתקה:
+                </span>
+                <span class="text-[11px] text-slate-400">מתעדכן אוטומטית</span>
+              </div>
+
+              <textarea id="selfie-pb-output-textarea" readonly
+                class="w-full h-72 sm:h-80 p-3.5 rounded-xl bg-slate-950/90 border border-white/15 text-slate-100 text-xs leading-relaxed font-sans resize-none focus:outline-none select-all">${generatedPrompt}</textarea>
+
+              <button type="button" onclick="SelfieApp.copyPersonalAiPrompt()"
+                class="w-full py-3.5 px-5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-sm sm:text-base shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2">
+                <span>📋</span>
+                <span id="selfie-pb-copy-btn-text">העתקת הפרומפט האישי ללוח (Copy)</span>
+              </button>
+
+              <div class="text-center text-[11px] text-slate-400">
+                או העתיקו ופתחו ישירות בצ׳אט המועדף עליכם (ואז הדביקו <code>Ctrl+V</code>):
+              </div>
+
+              <div class="grid grid-cols-3 gap-2.5">
+                <button type="button" onclick="SelfieApp.copyAndLaunchPersonalAi('https://gemini.google.com/app')"
+                  class="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-extrabold transition-all flex items-center justify-center gap-1.5">
+                  <span>✨</span>
+                  <span>Gemini</span>
+                </button>
+                <button type="button" onclick="SelfieApp.copyAndLaunchPersonalAi('https://chatgpt.com/')"
+                  class="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-extrabold transition-all flex items-center justify-center gap-1.5">
+                  <span>💬</span>
+                  <span>ChatGPT</span>
+                </button>
+                <button type="button" onclick="SelfieApp.copyAndLaunchPersonalAi('https://claude.ai/new')"
+                  class="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-extrabold transition-all flex items-center justify-center gap-1.5">
+                  <span>🧠</span>
+                  <span>Claude</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1308,6 +1849,58 @@ window.SelfieApp = (function () {
           </div>
         </div>
 
+        <!-- 4-View Participant & Raw Responses Table Manager (Placed at TOP of Dashboard) -->
+        <div class="bg-white rounded-2xl border-2 border-indigo-200/90 p-5 shadow-sm">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+            <div class="flex flex-wrap gap-2">
+              <button onclick="SelfieApp.setDashboardCohortView('raw_all')"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  state.dashboardCohortView === "raw_all"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-indigo-50 text-indigo-900 border border-indigo-200 hover:bg-indigo-100"
+                }">
+                כל השאלונים והתשובות הגולמיות – שאלות 1–19 (${state.cohortSubmissions.length})
+              </button>
+              <button onclick="SelfieApp.setDashboardCohortView('paired')"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  state.dashboardCohortView === "paired"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }">
+                משיבים מזווגים – ענו בשתי הפעימות (${analysis.cohorts.paired.length})
+              </button>
+              <button onclick="SelfieApp.setDashboardCohortView('attrition')"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  state.dashboardCohortView === "attrition"
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+                }">
+                ענו רק בפעימה א׳ – נדרשת תזכורת לפעימה ב׳ (${analysis.cohorts.attrition.length})
+              </button>
+              <button onclick="SelfieApp.setDashboardCohortView('late')"
+                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
+                  state.dashboardCohortView === "late"
+                    ? "bg-purple-600 text-white"
+                    : "bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100"
+                }">
+                ענו רק בפעימה ב׳ – מופרדים מהמחקר המזווג (${analysis.cohorts.lateJoiners.length})
+              </button>
+            </div>
+
+            ${
+              state.dashboardCohortView === "attrition" && analysis.cohorts.attrition.length > 0
+                ? `<button onclick="SelfieApp.copyAttritionReminder()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm">
+                    העתק הודעת תזכורת ממוקדת לחוגים להשלמת הזיווג
+                  </button>`
+                : ""
+            }
+          </div>
+
+          <div class="pt-4 overflow-x-auto">
+            ${renderCohortTableHtml(analysis)}
+          </div>
+        </div>
+
         <!-- Dashboard Header & Filters -->
         <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -1496,58 +2089,6 @@ window.SelfieApp = (function () {
             </div>
           </div>
         </div>
-
-        <!-- 4-View Participant & Raw Responses Table Manager -->
-        <div class="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
-            <div class="flex flex-wrap gap-2">
-              <button onclick="SelfieApp.setDashboardCohortView('raw_all')"
-                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                  state.dashboardCohortView === "raw_all"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-indigo-50 text-indigo-900 border border-indigo-200 hover:bg-indigo-100"
-                }">
-                כל השאלונים והתשובות הגולמיות – שאלות 1–19 (${state.cohortSubmissions.length})
-              </button>
-              <button onclick="SelfieApp.setDashboardCohortView('paired')"
-                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                  state.dashboardCohortView === "paired"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }">
-                משיבים מזווגים – ענו בשתי הפעימות (${analysis.cohorts.paired.length})
-              </button>
-              <button onclick="SelfieApp.setDashboardCohortView('attrition')"
-                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                  state.dashboardCohortView === "attrition"
-                    ? "bg-amber-600 text-white"
-                    : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
-                }">
-                ענו רק בפעימה א׳ – נדרשת תזכורת לפעימה ב׳ (${analysis.cohorts.attrition.length})
-              </button>
-              <button onclick="SelfieApp.setDashboardCohortView('late')"
-                class="px-3.5 py-2 rounded-xl text-xs font-black transition-all ${
-                  state.dashboardCohortView === "late"
-                    ? "bg-purple-600 text-white"
-                    : "bg-purple-50 text-purple-900 border border-purple-200 hover:bg-purple-100"
-                }">
-                ענו רק בפעימה ב׳ – מופרדים מהמחקר המזווג (${analysis.cohorts.lateJoiners.length})
-              </button>
-            </div>
-
-            ${
-              state.dashboardCohortView === "attrition" && analysis.cohorts.attrition.length > 0
-                ? `<button onclick="SelfieApp.copyAttritionReminder()" class="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm">
-                    העתק הודעת תזכורת ממוקדת לחוגים להשלמת הזיווג
-                  </button>`
-                : ""
-            }
-          </div>
-
-          <div class="pt-4 overflow-x-auto">
-            ${renderCohortTableHtml(analysis)}
-          </div>
-        </div>
       </div>
     `;
   }
@@ -1661,7 +2202,9 @@ window.SelfieApp = (function () {
                           <td class="p-3 font-bold text-slate-800">${pulseName}</td>
                           <td class="p-3">
                             ${
-                              q1Lv
+                              s.prePerception === "NA"
+                                ? `<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-[11px] font-bold">לא רלוונטי</span>`
+                                : q1Lv
                                 ? `<span class="px-2 py-0.5 rounded text-white text-[11px] font-bold" style="background:${q1Lv.color}">${q1Lv.titleHe}</span>`
                                 : `<span class="text-slate-400">לא סומן</span>`
                             }
@@ -1718,7 +2261,9 @@ window.SelfieApp = (function () {
                                       <div class="text-xs font-bold text-slate-900 mt-0.5">איך את/ה מגדיר/ה את עצמך</div>
                                       <div class="mt-1.5">
                                         ${
-                                          q1Lv
+                                          s.prePerception === "NA"
+                                            ? `<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-[11px] font-black">לא רלוונטי</span>`
+                                            : q1Lv
                                             ? `<span class="px-2 py-0.5 rounded text-[11px] font-black text-white" style="background:${q1Lv.color}">${q1Lv.titleHe}</span>`
                                             : `<span class="text-slate-400">לא סומן</span>`
                                         }
@@ -1734,7 +2279,9 @@ window.SelfieApp = (function () {
                                             <div class="text-xs font-bold text-slate-900 mt-0.5">${qItem.titleHe}</div>
                                             <div class="mt-1.5">
                                               ${
-                                                ansLv
+                                                ansCode === "NA"
+                                                  ? `<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-[11px] font-black">לא רלוונטי</span>`
+                                                  : ansLv
                                                   ? `<span class="px-2 py-0.5 rounded text-[11px] font-black text-white" style="background:${ansLv.color}">${ansLv.titleHe} (${ansLv.normalizedScore}%)</span>`
                                                   : `<span class="text-slate-400">לא נענה</span>`
                                               }
@@ -2139,7 +2686,8 @@ window.SelfieApp = (function () {
       itemRefs.forEach((ref) => {
         const code = (s.responses && s.responses[ref.id]) || "";
         const lv = levelByCode[code];
-        itemCols.push(csvEscape(lv ? lv.titleHe : ""), lv ? lv.normalizedScore : "");
+        const titleStr = code === "NA" ? "לא רלוונטי" : lv ? lv.titleHe : "";
+        itemCols.push(csvEscape(titleStr), lv ? lv.normalizedScore : "");
       });
 
       const domScores = calc.domainResults.map((d) => d.score);
@@ -2155,7 +2703,7 @@ window.SelfieApp = (function () {
         csvEscape(deptName),
         csvEscape(s.courseName || ""),
         csvEscape(pulseName),
-        csvEscape(q1Lv ? q1Lv.titleHe : ""),
+        csvEscape(s.prePerception === "NA" ? "לא רלוונטי" : q1Lv ? q1Lv.titleHe : ""),
         q1Lv ? q1Lv.normalizedScore : "",
         calc.overallScore,
         csvEscape(calc.overallLevel.titleHe),
@@ -2704,6 +3252,13 @@ window.SelfieApp = (function () {
     applyQuickPreset,
     submitCurrentReflection,
     setDomainIdx,
+    togglePromptGoal,
+    setPromptGuidanceStyle,
+    setPromptTechLevel,
+    setPromptGender,
+    updatePromptCustomTopic,
+    copyPersonalAiPrompt,
+    copyAndLaunchPersonalAi,
     updateAiOption,
     copySyllabusCard,
     copyMegaPrompt,

@@ -117,7 +117,7 @@ window.SelfieScoringEngine = (function () {
             domainColor: dom.color,
             itemTitleHe: item.titleHe,
             code: rawAns || "",
-            levelTitleHe: firstLvl.titleHe,
+            levelTitleHe: rawAns === "NA" ? "לא רלוונטי" : firstLvl.titleHe,
             numeric: null,
             normalized: null,
             oldEuPct: 0,
